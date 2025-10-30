@@ -10,114 +10,6 @@
 			"name": "User Service",
 			"item": [
 				{
-					"name": "Store new user",
-					"item": [
-						{
-							"name": "Store new user - happy path",
-							"event": [
-								{
-									"listen": "test",
-									"script": {
-										"exec": [
-											"pm.test(\"Store new user - status code is 201\", function () {\r",
-											"    pm.response.to.have.status(201);\r",
-											"});\r",
-											"\r",
-											"const jsonData = pm.response.json();\r",
-											"\r",
-											"pm.test(\"Store new user - correct information about user\", function () {\r",
-											"    pm.expect(jsonData.first_name).to.eql(\"John\");\r",
-											"    pm.expect(jsonData.last_name).to.eql(\"Doe\");\r",
-											"    pm.expect(jsonData.phone).to.eql(\"0987654321\");\r",
-											"    pm.expect(jsonData.dob).to.eql(\"1970-01-01\");\r",
-											"    pm.expect(jsonData.email).to.eql(\"john@doe.example\");\r",
-											"});\r",
-											"\r",
-											"pm.test(\"Store new user - correct information about address\", function () {\r",
-											"    const address = jsonData.address;\r",
-											"    pm.expect(address.street).to.eql(\"Street 1\");\r",
-											"    pm.expect(address.city).to.eql(\"City\");\r",
-											"    pm.expect(address.state).to.eql(\"State\");\r",
-											"    pm.expect(address.country).to.eql(\"Country\");\r",
-											"    pm.expect(address.postal_code).to.eql(\"1234AA\");\r",
-											"});"
-										],
-										"type": "text/javascript",
-										"packages": {},
-										"requests": {}
-									}
-								}
-							],
-							"request": {
-								"method": "POST",
-								"header": [],
-								"body": {
-									"mode": "raw",
-									"raw": "{\r\n  \"first_name\": \"John\",\r\n  \"last_name\": \"Doe\",\r\n  \"address\": {\r\n    \"street\": \"Street 1\",\r\n    \"city\": \"City\",\r\n    \"state\": \"State\",\r\n    \"country\": \"Country\",\r\n    \"postal_code\": \"1234AA\"\r\n  },\r\n  \"phone\": \"0987654321\",\r\n  \"dob\": \"1970-01-01\",\r\n  \"password\": \"Super-secret1!\",\r\n  \"email\": \"john@doe.example\"\r\n}",
-									"options": {
-										"raw": {
-											"language": "json"
-										}
-									}
-								},
-								"url": {
-									"raw": "{{base_url}}/users/register",
-									"host": [
-										"{{base_url}}"
-									],
-									"path": [
-										"users",
-										"register"
-									]
-								}
-							},
-							"response": []
-						},
-						{
-							"name": "Store new user - negative path (incorrect password)",
-							"event": [
-								{
-									"listen": "test",
-									"script": {
-										"exec": [
-											"pm.test(\"Store new user - status code is 422\", function () {\r",
-											"    pm.response.to.have.status(422);\r",
-											"});"
-										],
-										"type": "text/javascript",
-										"packages": {},
-										"requests": {}
-									}
-								}
-							],
-							"request": {
-								"method": "POST",
-								"header": [],
-								"body": {
-									"mode": "raw",
-									"raw": "{\r\n  \"first_name\": \"John\",\r\n  \"last_name\": \"Doe\",\r\n  \"address\": {\r\n    \"street\": \"Street 1\",\r\n    \"city\": \"City\",\r\n    \"state\": \"State\",\r\n    \"country\": \"Country\",\r\n    \"postal_code\": \"1234AA\"\r\n  },\r\n  \"phone\": \"0987654321\",\r\n  \"dob\": \"1970-01-01\",\r\n  \"password\": \"super-secret\",\r\n  \"email\": \"john@doe.example\"\r\n}",
-									"options": {
-										"raw": {
-											"language": "json"
-										}
-									}
-								},
-								"url": {
-									"raw": "{{base_url}}/users/register",
-									"host": [
-										"{{base_url}}"
-									],
-									"path": [
-										"users",
-										"register"
-									]
-								}
-							},
-							"response": []
-						}
-					]
-				},
-				{
 					"name": "Login customer",
 					"item": [
 						{
@@ -133,13 +25,67 @@
 											"\r",
 											"const jsonData = pm.response.json();\r",
 											"\r",
-											"pm.test(\"Login customer - response has token\", function () {\r",
+											"pm.test(\"Login customer  - response contains all required fields\", function () {\r",
 											"    pm.expect(jsonData).to.have.property(\"access_token\");\r",
+											"    pm.expect(jsonData).to.have.property(\"token_type\");\r",
+											"    pm.expect(jsonData).to.have.property(\"expires_in\");\r",
+											"});\r",
+											"\r",
+											"pm.test(\"Login customer - field types are correct\", function () {\r",
+											"    pm.expect(jsonData.access_token).to.be.a(\"string\");\r",
+											"    pm.expect(jsonData.token_type).to.be.a(\"string\");\r",
+											"    pm.expect(jsonData.expires_in).to.be.a(\"number\");\r",
+											"})\r",
+											"\r",
+											"\r",
+											"pm.test(\"Login customer - correct values in response\", function () {\r",
 											"    pm.expect(jsonData.access_token).to.not.be.empty;\r",
-											"    pm.expect(jsonData.token_type).to.include(\"bearer\");\r",
+											"    pm.expect(jsonData.token_type).to.eql(\"bearer\");\r",
+											"    pm.expect(jsonData.expires_in).to.be.above(0);\r",
 											"});\r",
 											"\r",
 											"pm.environment.set(\"token\", jsonData.access_token);"
+										],
+										"type": "text/javascript",
+										"packages": {},
+										"requests": {}
+									}
+								},
+								{
+									"listen": "prerequest",
+									"script": {
+										"exec": [
+											"const timestamp = Date.now();",
+											"    pm.environment.set(\"unique_prefix\", `${timestamp}_`);",
+											"const prefix = pm.environment.get(\"unique_prefix\");",
+											"pm.sendRequest({",
+											"    url: pm.collectionVariables.get(\"base_url\") + \"/users/register\",",
+											"    method: \"POST\",",
+											"    header: {",
+											"        \"Content-Type\": \"application/json\"",
+											"    },",
+											"    body: {",
+											"        mode: \"raw\",",
+											"        raw: JSON.stringify({",
+											"            \"first_name\": \"John\",",
+											"            \"last_name\": \"Doe\",",
+											"            \"address\": {",
+											"                \"street\": \"Street 1\",",
+											"                \"city\": \"City\",",
+											"                \"state\": \"State\",",
+											"                \"country\": \"Country\",",
+											"                \"postal_code\": \"1234AA\"",
+											"            },",
+											"            \"phone\": \"0987654321\",",
+											"            \"dob\": \"1970-01-01\",",
+											"            \"password\": \"Super-secret1!\",",
+											"            \"email\": `${prefix}john@doe.example`",
+											"        })",
+											"    }",
+											"}, function (err, res) {",
+											"    const jsonData = res.json();",
+											"    pm.environment.set(\"user_id\", jsonData.id);",
+											"});"
 										],
 										"type": "text/javascript",
 										"packages": {},
@@ -152,7 +98,7 @@
 								"header": [],
 								"body": {
 									"mode": "raw",
-									"raw": "{\r\n  \"email\" : \"john@doe.example\",\r\n  \"password\" : \"Super-secret1!\"\r\n}",
+									"raw": "{\r\n  \"email\" : \"{{unique_prefix}}john@doe.example\",\r\n  \"password\" : \"Super-secret1!\"\r\n}",
 									"options": {
 										"raw": {
 											"language": "json"
@@ -232,11 +178,40 @@
 											"\r",
 											"const jsonData = pm.response.json();\r",
 											"\r",
-											"pm.test(\"Customer info - correct response values\", function () {\r",
+											"pm.test(\"Customer info - response contains all main fields\", function () {\r",
+											"    const requiredFields = [\r",
+											"        \"first_name\", \"last_name\", \"address\", \"phone\",\r",
+											"        \"dob\", \"email\", \"id\",\r",
+											"        \"totp_enabled\", \"created_at\"\r",
+											"    ];\r",
+											"    requiredFields.forEach(field => pm.expect(jsonData).to.have.property(field));\r",
+											"});\r",
+											"\r",
+											"pm.test(\"Customer info - address object contains all required fields\", function () {\r",
+											"    const address = jsonData.address;\r",
+											"    const addressFields = [\"street\", \"city\", \"state\", \"country\", \"postal_code\"];\r",
+											"    addressFields.forEach(field => pm.expect(address).to.have.property(field));\r",
+											"});\r",
+											"\r",
+											"pm.test(\"Customer info - field types are correct\", function () {\r",
+											"    pm.expect(jsonData.first_name).to.be.a(\"string\");\r",
+											"    pm.expect(jsonData.last_name).to.be.a(\"string\");\r",
+											"    pm.expect(jsonData.address).to.be.an(\"object\");\r",
+											"    pm.expect(jsonData.phone).to.be.a(\"string\");\r",
+											"    pm.expect(jsonData.dob).to.be.a(\"string\");\r",
+											"    pm.expect(jsonData.email).to.be.a(\"string\");\r",
+											"    pm.expect(jsonData.id).to.be.a(\"string\");\r",
+											"    pm.expect(jsonData.totp_enabled).to.be.a(\"boolean\");\r",
+											"    pm.expect(jsonData.created_at).to.be.a(\"string\");\r",
+											"});\r",
+											"\r",
+											"const prefix = pm.environment.get(\"unique_prefix\");\r",
+											"\r",
+											"pm.test(\"Customer info - correct basic values\", function () {\r",
 											"    pm.expect(jsonData).to.have.property(\"id\");\r",
 											"    pm.expect(jsonData.first_name).to.eql(\"John\");\r",
 											"    pm.expect(jsonData.last_name).to.eql(\"Doe\");\r",
-											"    pm.expect(jsonData.email).to.eql(\"john@doe.example\");\r",
+											"    pm.expect(jsonData.email).to.eql(`${prefix}john@doe.example`);\r",
 											"});\r",
 											""
 										],
@@ -341,83 +316,6 @@
 			"name": "Brand Service",
 			"item": [
 				{
-					"name": "Get specific brand",
-					"item": [
-						{
-							"name": "Get specific brand - happy path",
-							"event": [
-								{
-									"listen": "test",
-									"script": {
-										"exec": [
-											"pm.test(\"Get brand - status code is 200\"), function () {\r",
-											"    pm.response.to.have.status(200);\r",
-											"}\r",
-											"\r",
-											"pm.test(\"Get brand - response has correct values\"), function () {\r",
-											"    const jsonData = pm.response.json();\r",
-											"    pm.expect(jsonData.id).to.include(\"01K7J6H7F011MWEGK2782FE2ZG\")\r",
-											"    pm.expect(jsonData.name).to.include(\"ForgeFlex Tools\");\r",
-											"}"
-										],
-										"type": "text/javascript",
-										"packages": {},
-										"requests": {}
-									}
-								}
-							],
-							"request": {
-								"method": "GET",
-								"header": [],
-								"url": {
-									"raw": "{{base_url}}/brands/01K7J6H7F011MWEGK2782FE2ZG",
-									"host": [
-										"{{base_url}}"
-									],
-									"path": [
-										"brands",
-										"01K7J6H7F011MWEGK2782FE2ZG"
-									]
-								}
-							},
-							"response": []
-						},
-						{
-							"name": "Get specific brand - negative path (incorrect ID)",
-							"event": [
-								{
-									"listen": "test",
-									"script": {
-										"exec": [
-											"pm.test(\"Get brand - status code is 404\"), function () {\r",
-											"    pm.response.to.have.status(404);\r",
-											"}"
-										],
-										"type": "text/javascript",
-										"packages": {},
-										"requests": {}
-									}
-								}
-							],
-							"request": {
-								"method": "GET",
-								"header": [],
-								"url": {
-									"raw": "{{base_url}}/brands/BAD_ID",
-									"host": [
-										"{{base_url}}"
-									],
-									"path": [
-										"brands",
-										"BAD_ID"
-									]
-								}
-							},
-							"response": []
-						}
-					]
-				},
-				{
 					"name": "Store new brand",
 					"item": [
 						{
@@ -433,13 +331,50 @@
 											"\r",
 											"const jsonData = pm.response.json();\r",
 											"\r",
-											"pm.test(\"Store new brand - correct response values\", function () {\r",
-											"    pm.expect(jsonData).to.have.property(\"id\");\r",
-											"    pm.expect(jsonData.name).to.include(\"New brand\");\r",
-											"    pm.expect(jsonData.slug).to.include(\"new-brand\");\r",
+											"pm.test(\"Store new brand - response contains required fields\", function () {\r",
+											"    [\"id\", \"name\", \"slug\"].forEach(field => {\r",
+											"        pm.expect(jsonData).to.have.property(field);\r",
+											"    });\r",
 											"});\r",
 											"\r",
-											"pm.environment.set(\"brand_id\", jsonData.id);"
+											"pm.test(\"Store new brand - field types are correct\", function () {\r",
+											"    pm.expect(jsonData.id).to.be.a(\"string\");\r",
+											"    pm.expect(jsonData.name).to.be.a(\"string\");\r",
+											"    pm.expect(jsonData.slug).to.be.a(\"string\");\r",
+											"})\r",
+											"\r",
+											"const prefix = pm.environment.get(\"unique_prefix\");\r",
+											"\r",
+											"pm.test(\"Store new brand - valuesa are correct\", function () {\r",
+											"    pm.expect(jsonData).to.have.property(\"id\");\r",
+											"    pm.expect(jsonData.name).to.eql(\"New brand\");\r",
+											"    pm.expect(jsonData.slug).to.eql(`${prefix}new-brand`);\r",
+											"});\r",
+											"\r",
+											"pm.environment.set(\"brand_id\", jsonData.id);\r",
+											"\r",
+											"pm.sendRequest({\r",
+											"    url: pm.collectionVariables.get(\"base_url\") + `/brands/${jsonData.id}`,\r",
+											"    method: \"GET\",\r",
+											"    header: {\r",
+											"        \"Content-Type\": \"application/json\"\r",
+											"    }\r",
+											"}, function (err, res) {\r",
+											"        pm.test(\"Store new brand - check if created\", function () {\r",
+											"            pm.expect(res.code).to.eql(200);\r",
+											"        });\r",
+											"});"
+										],
+										"type": "text/javascript",
+										"packages": {},
+										"requests": {}
+									}
+								},
+								{
+									"listen": "prerequest",
+									"script": {
+										"exec": [
+											""
 										],
 										"type": "text/javascript",
 										"packages": {},
@@ -452,7 +387,7 @@
 								"header": [],
 								"body": {
 									"mode": "raw",
-									"raw": "{\r\n    \"name\" : \"New brand\",\r\n    \"slug\" : \"new-brand\"\r\n}",
+									"raw": "{\r\n    \"name\": \"New brand\",\r\n    \"slug\": \"{{unique_prefix}}new-brand\"\r\n}",
 									"options": {
 										"raw": {
 											"language": "json"
@@ -515,6 +450,88 @@
 							"response": []
 						}
 					]
+				},
+				{
+					"name": "Get specific brand",
+					"item": [
+						{
+							"name": "Get specific brand - happy path",
+							"event": [
+								{
+									"listen": "test",
+									"script": {
+										"exec": [
+											"pm.test(\"Get brand - status code is 200\"), function () {\r",
+											"    pm.response.to.have.status(200);\r",
+											"}\r",
+											"\r",
+											"const brandId = pm.environment.get(\"brand_id\");\r",
+											"\r",
+											"const prefix = pm.environment.get(\"unique_prefix\");\r",
+											"\r",
+											"pm.test(\"Get brand - response has correct values\"), function () {\r",
+											"    const jsonData = pm.response.json();\r",
+											"    pm.expect(jsonData.id).to.eql(\"brand_id\")\r",
+											"    pm.expect(jsonData.name).to.eql(\"New brand\")\r",
+											"    pm.expect(jsonData.slug).to.eql(`${prefix}new-brand`);\r",
+											"}"
+										],
+										"type": "text/javascript",
+										"packages": {},
+										"requests": {}
+									}
+								}
+							],
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/brands/{{brand_id}}",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"brands",
+										"{{brand_id}}"
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "Get specific brand - negative path (incorrect ID)",
+							"event": [
+								{
+									"listen": "test",
+									"script": {
+										"exec": [
+											"pm.test(\"Get brand - status code is 404\"), function () {\r",
+											"    pm.response.to.have.status(404);\r",
+											"}"
+										],
+										"type": "text/javascript",
+										"packages": {},
+										"requests": {}
+									}
+								}
+							],
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{base_url}}/brands/BAD_ID",
+									"host": [
+										"{{base_url}}"
+									],
+									"path": [
+										"brands",
+										"BAD_ID"
+									]
+								}
+							},
+							"response": []
+						}
+					]
 				}
 			]
 		},
@@ -537,13 +554,39 @@
 											"\r",
 											"const jsonData = pm.response.json();\r",
 											"\r",
+											"pm.test(\"Store new category - response contains all required fields\", function () {\r",
+											"    const requiredFields = [\"name\", \"slug\", \"id\"];\r",
+											"    requiredFields.forEach(field => pm.expect(jsonData).to.have.property(field));\r",
+											"});\r",
+											"\r",
+											"pm.test(\"Store new category - field types are correct\", function () {\r",
+											"    pm.expect(jsonData.name).to.be.a(\"string\");\r",
+											"    pm.expect(jsonData.slug).to.be.a(\"string\");\r",
+											"    pm.expect(jsonData.id).to.be.a(\"string\");\r",
+											"});\r",
+											"\r",
+											"const prefix = pm.environment.get(\"unique_prefix\");\r",
+											"\r",
 											"pm.test(\"Store new category - correct response values\", function () {\r",
 											"    pm.expect(jsonData).to.have.property(\"id\");\r",
 											"    pm.expect(jsonData.name).to.include(\"Test category\");\r",
-											"    pm.expect(jsonData.slug).to.include(\"test-category\");\r",
+											"    pm.expect(jsonData.slug).to.include(`${prefix}test-category`);\r",
 											"});\r",
 											"\r",
-											"pm.environment.set(\"category_id\", jsonData.id);"
+											"pm.environment.set(\"category_id\", jsonData.id);\r",
+											"\r",
+											"pm.sendRequest({\r",
+											"    url: pm.collectionVariables.get(\"base_url\") + `/categories/tree/${jsonData.id}`,\r",
+											"    method: \"GET\",\r",
+											"    header: {\r",
+											"        \"Authorization\": \"Bearer \" + pm.environment.get(\"token\"),\r",
+											"        \"Content-Type\": \"application/json\"\r",
+											"    }\r",
+											"}, function (err, res) {\r",
+											"        pm.test(\"Store new category - check if created\", function () {\r",
+											"            pm.expect(res.code).to.eql(200);\r",
+											"        });\r",
+											"});"
 										],
 										"type": "text/javascript",
 										"packages": {},
@@ -556,7 +599,7 @@
 								"header": [],
 								"body": {
 									"mode": "raw",
-									"raw": "{\r\n    \"name\" : \"Test category\",\r\n    \"slug\" : \"test-category\"\r\n}",
+									"raw": "{\r\n    \"name\" : \"Test category\",\r\n    \"slug\" : \"{{unique_prefix}}test-category\"\r\n}",
 									"options": {
 										"raw": {
 											"language": "json"
@@ -636,7 +679,29 @@
 											"\r",
 											"pm.test(\"Update category - correct success message\", function () {\r",
 											"    pm.expect(jsonData.success).to.be.true;\r",
-											"});"
+											"});\r",
+											"\r",
+											"const category_id = pm.environment.get(\"category_id\");\r",
+											"const prefix = pm.environment.get(\"unique_prefix\");\r",
+											"\r",
+											"pm.sendRequest({\r",
+											"    url: pm.collectionVariables.get(\"base_url\") + `/categories/tree/${category_id}`,\r",
+											"    method: \"GET\",\r",
+											"    header: {\r",
+											"        \"Authorization\": \"Bearer \" + pm.environment.get(\"token\"),\r",
+											"        \"Content-Type\": \"application/json\"\r",
+											"    }\r",
+											"}, function (err, res) {\r",
+											"        const categoryData = res.json();\r",
+											"\r",
+											"        pm.test(\"Update category - correct new values\", function () {\r",
+											"        pm.expect(categoryData.name).to.eql(\"New name\");\r",
+											"        pm.expect(categoryData.slug).to.eql(`${prefix}test-category`);\r",
+											"    });\r",
+											"});\r",
+											"\r",
+											"\r",
+											""
 										],
 										"type": "text/javascript",
 										"packages": {},
@@ -664,48 +729,6 @@
 									"path": [
 										"categories",
 										"{{category_id}}"
-									]
-								}
-							},
-							"response": []
-						},
-						{
-							"name": "Get category",
-							"event": [
-								{
-									"listen": "test",
-									"script": {
-										"exec": [
-											"const jsonData = pm.response.json();\r",
-											"\r",
-											"pm.test(\"Update category - correct new values\", function () {\r",
-											"    pm.expect(jsonData[0].name).to.eql(\"New name\");\r",
-											"    pm.expect(jsonData[0].slug).to.eql(\"test-category\");\r",
-											"});"
-										],
-										"type": "text/javascript",
-										"packages": {},
-										"requests": {}
-									}
-								}
-							],
-							"request": {
-								"method": "GET",
-								"header": [],
-								"url": {
-									"raw": "{{base_url}}/categories/search?q=New%20name",
-									"host": [
-										"{{base_url}}"
-									],
-									"path": [
-										"categories",
-										"search"
-									],
-									"query": [
-										{
-											"key": "q",
-											"value": "New%20name"
-										}
 									]
 								}
 							},
@@ -764,38 +787,6 @@
 					"name": "Store new product",
 					"item": [
 						{
-							"name": "Get image ID",
-							"event": [
-								{
-									"listen": "test",
-									"script": {
-										"exec": [
-											"const jsonData = pm.response.json();\r",
-											"const firstId = jsonData[0].id;\r",
-											"pm.environment.set(\"image_id\", firstId);"
-										],
-										"type": "text/javascript",
-										"packages": {},
-										"requests": {}
-									}
-								}
-							],
-							"request": {
-								"method": "GET",
-								"header": [],
-								"url": {
-									"raw": "{{base_url}}/images",
-									"host": [
-										"{{base_url}}"
-									],
-									"path": [
-										"images"
-									]
-								}
-							},
-							"response": []
-						},
-						{
 							"name": "Store new product - happy path",
 							"event": [
 								{
@@ -808,12 +799,74 @@
 											"\r",
 											"const jsonData = pm.response.json();\r",
 											"\r",
+											"pm.test(\"Store new product - response contains all required fields\", function () {\r",
+											"    const requiredFields = [\r",
+											"        \"id\",\r",
+											"        \"name\",\r",
+											"        \"description\",\r",
+											"        \"price\",\r",
+											"        \"is_location_offer\",\r",
+											"        \"is_rental\",\r",
+											"        \"in_stock\"\r",
+											"    ];\r",
+											"    requiredFields.forEach(field => pm.expect(jsonData).to.have.property(field));\r",
+											"});\r",
+											"\r",
+											"pm.test(\"Store new product - field types are correct\", function () {\r",
+											"    pm.expect(jsonData.id).to.be.a(\"string\");\r",
+											"    pm.expect(jsonData.name).to.be.a(\"string\");\r",
+											"    pm.expect(jsonData.description).to.be.a(\"string\");\r",
+											"    pm.expect(jsonData.price).to.be.a(\"number\");\r",
+											"    pm.expect(jsonData.is_location_offer).to.be.a(\"boolean\");\r",
+											"    pm.expect(jsonData.is_rental).to.be.a(\"boolean\");\r",
+											"    pm.expect(jsonData.in_stock).to.be.a(\"boolean\");\r",
+											"});\r",
+											"\r",
 											"pm.test(\"Store new product - correct response values\", function () {\r",
 											"    pm.expect(jsonData).to.have.property(\"id\");\r",
 											"    pm.expect(jsonData.name).to.include(\"hammer\");\r",
+											"    pm.expect(jsonData.description).to.eql(\"string\");\r",
+											"    pm.expect(jsonData.price).to.eql(1.99);\r",
+											"    pm.expect(jsonData.is_location_offer).to.eql(true);\r",
+											"    pm.expect(jsonData.is_rental).to.eql(false);\r",
 											"});\r",
 											"\r",
-											"pm.environment.set(\"product_id\", jsonData.id);"
+											"pm.environment.set(\"product_id\", jsonData.id);\r",
+											"\r",
+											"pm.sendRequest({\r",
+											"    url: pm.collectionVariables.get(\"base_url\") + `/products/${jsonData.id}`,\r",
+											"    method: \"GET\",\r",
+											"    header: {\r",
+											"        \"Content-Type\": \"application/json\"\r",
+											"    }\r",
+											"}, function (err, res) {\r",
+											"        pm.test(\"Store new product - check if created\", function () {\r",
+											"            pm.expect(res.code).to.eql(200);\r",
+											"        });\r",
+											"});\r",
+											""
+										],
+										"type": "text/javascript",
+										"packages": {},
+										"requests": {}
+									}
+								},
+								{
+									"listen": "prerequest",
+									"script": {
+										"exec": [
+											"pm.sendRequest({\r",
+											"    url: pm.collectionVariables.get(\"base_url\") + `/images`,\r",
+											"    method: \"GET\",\r",
+											"    header: {\r",
+											"        \"Authorization\": \"Bearer \" + pm.environment.get(\"token\"),\r",
+											"        \"Content-Type\": \"application/json\"\r",
+											"    }\r",
+											"}, function (err, res) {\r",
+											"        const jsonData = res.json();\r",
+											"        const firstId = jsonData[0].id;\r",
+											"        pm.environment.set(\"image_id\", firstId);\r",
+											"});"
 										],
 										"type": "text/javascript",
 										"packages": {},
@@ -941,6 +994,24 @@
 											"pm.test(\"Update product - correct message\", function () {\r",
 											"    pm.expect(jsonData.success).to.be.true;\r",
 											"});\r",
+											"\r",
+											"const product_id = pm.environment.get(\"product_id\");\r",
+											"\r",
+											"pm.sendRequest({\r",
+											"    url: pm.collectionVariables.get(\"base_url\") + `/products/${product_id}`,\r",
+											"    method: \"GET\",\r",
+											"    header: {\r",
+											"        \"Authorization\": \"Bearer \" + pm.environment.get(\"token\"),\r",
+											"        \"Content-Type\": \"application/json\"\r",
+											"    }\r",
+											"}, function (err, res) {\r",
+											"\r",
+											"        const jsonData = res.json();\r",
+											"        pm.test(\"Update product - correct new values\", function () {\r",
+											"            pm.expect(jsonData.name).to.include(\"New name\");\r",
+											"            pm.expect(jsonData.price).to.eql(10.00);\r",
+											"    });\r",
+											"});\r",
 											""
 										],
 										"type": "text/javascript",
@@ -954,50 +1025,13 @@
 								"header": [],
 								"body": {
 									"mode": "raw",
-									"raw": "{\r\n \"name\": \"New name\",\r\n  \"description\": \"Nunc vulputate, orci at congue faucibus, enim neque sodales nulla, nec imperdiet augue odio vel nibh. Etiam auctor, ligula quis gravida dictum, mi massa commodo ante, sollicitudin pulvinar nulla justo hendrerit lacus. Vivamus rutrum pharetra molestie. Fusce tristique odio tristique, elementum est eget, porttitor diam. Orci varius natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus. Maecenas at ligula sed sapien porta pretium. Aenean cursus, magna in blandit consectetur, libero orci aliquet eros, et maximus nunc est eu dolor. Aenean non pellentesque eros. In sodales orci eget orci fringilla, vitae feugiat elit porta. Etiam aliquam, mi pretium tempus mattis, mauris ipsum gravida risus, at tempor nulla ipsum molestie ligula. Ut placerat, urna sit amet tincidunt volutpat, ex orci luctus purus, nec laoreet dolor sapien vel erat.\",\r\n  \"price\": 10.00,\r\n  \"category_id\": \"{{category_id}}\",\r\n  \"brand_id\": \"{{brand_id}}\",\r\n  \"product_image_id\": \"{{image_id}}\",\r\n  \"is_location_offer\": 0,\r\n  \"is_rental\": 0\r\n}",
+									"raw": "{\r\n \"name\": \"New name\",\r\n  \"description\": \"string\",\r\n  \"price\": 10.00,\r\n  \"category_id\": \"{{category_id}}\",\r\n  \"brand_id\": \"{{brand_id}}\",\r\n  \"product_image_id\": \"{{image_id}}\",\r\n  \"is_location_offer\": 0,\r\n  \"is_rental\": 0\r\n}",
 									"options": {
 										"raw": {
 											"language": "json"
 										}
 									}
 								},
-								"url": {
-									"raw": "{{base_url}}/products/{{product_id}}",
-									"host": [
-										"{{base_url}}"
-									],
-									"path": [
-										"products",
-										"{{product_id}}"
-									]
-								}
-							},
-							"response": []
-						},
-						{
-							"name": "Get product - check after update",
-							"event": [
-								{
-									"listen": "test",
-									"script": {
-										"exec": [
-											"const jsonData = pm.response.json();\r",
-											"\r",
-											"pm.test(\"Update product - correct new values\", function () {\r",
-											"    pm.expect(jsonData.name).to.include(\"New name\");\r",
-											"    pm.expect(jsonData.price).to.eql(10.00);\r",
-											"});\r",
-											""
-										],
-										"type": "text/javascript",
-										"packages": {},
-										"requests": {}
-									}
-								}
-							],
-							"request": {
-								"method": "GET",
-								"header": [],
 								"url": {
 									"raw": "{{base_url}}/products/{{product_id}}",
 									"host": [
@@ -1034,7 +1068,7 @@
 								"header": [],
 								"body": {
 									"mode": "raw",
-									"raw": "{\r\n \"name\": \"New name\",\r\n  \"description\": \"Nunc vulputate, orci at congue faucibus, enim neque sodales nulla, nec imperdiet augue odio vel nibh. Etiam auctor, ligula quis gravida dictum, mi massa commodo ante, sollicitudin pulvinar nulla justo hendrerit lacus. Vivamus rutrum pharetra molestie. Fusce tristique odio tristique, elementum est eget, porttitor diam. Orci varius natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus. Maecenas at ligula sed sapien porta pretium. Aenean cursus, magna in blandit consectetur, libero orci aliquet eros, et maximus nunc est eu dolor. Aenean non pellentesque eros. In sodales orci eget orci fringilla, vitae feugiat elit porta. Etiam aliquam, mi pretium tempus mattis, mauris ipsum gravida risus, at tempor nulla ipsum molestie ligula. Ut placerat, urna sit amet tincidunt volutpat, ex orci luctus purus, nec laoreet dolor sapien vel erat.\",\r\n  \"price\": -1.00,\r\n  \"category_id\": \"{{category_id}}\",\r\n  \"brand_id\": \"{{brand_id}}\",\r\n  \"product_image_id\": \"{{image_id}}\",\r\n  \"is_location_offer\": 0,\r\n  \"is_rental\": 0\r\n}",
+									"raw": "{\r\n \"name\": \"New name\",\r\n  \"description\": \"string\",\r\n  \"price\": -1.00,\r\n  \"category_id\": \"{{category_id}}\",\r\n  \"brand_id\": \"{{brand_id}}\",\r\n  \"product_image_id\": \"{{image_id}}\",\r\n  \"is_location_offer\": 0,\r\n  \"is_rental\": 0\r\n}",
 									"options": {
 										"raw": {
 											"language": "json"
@@ -1065,37 +1099,6 @@
 					"name": "Add product to cart",
 					"item": [
 						{
-							"name": "Create new cart (set up)",
-							"event": [
-								{
-									"listen": "test",
-									"script": {
-										"exec": [
-											"const jsonData = pm.response.json();\r",
-											"pm.environment.set(\"cart_id\", jsonData.id);"
-										],
-										"type": "text/javascript",
-										"packages": {},
-										"requests": {}
-									}
-								}
-							],
-							"request": {
-								"method": "POST",
-								"header": [],
-								"url": {
-									"raw": "{{base_url}}/carts",
-									"host": [
-										"{{base_url}}"
-									],
-									"path": [
-										"carts"
-									]
-								}
-							},
-							"response": []
-						},
-						{
 							"name": "Add product to cart - happy path",
 							"event": [
 								{
@@ -1104,6 +1107,49 @@
 										"exec": [
 											"pm.test(\"Add product to cart - status code is 200\", function () {\r",
 											"    pm.response.to.have.status(200);\r",
+											"});\r",
+											"\r",
+											"const baseUrl = pm.collectionVariables.get(\"base_url\");\r",
+											"const cartId = pm.environment.get(\"cart_id\");\r",
+											"const productId = pm.environment.get(\"product_id\");\r",
+											"\r",
+											"pm.sendRequest({\r",
+											"    url: `${baseUrl}/carts/${cartId}/product/quantity`,\r",
+											"    method: \"PUT\",\r",
+											"    header: {\r",
+											"        \"Content-Type\": \"application/json\"\r",
+											"    },\r",
+											"    body: {\r",
+											"        mode: \"raw\",\r",
+											"        raw: JSON.stringify({\r",
+											"            \"product_id\": productId,\r",
+											"            \"quantity\": 2\r",
+											"        })\r",
+											"    }\r",
+											"}, function (err, res) {\r",
+											"    pm.test(\"Add product to cart - check if created\", function () {\r",
+											"        pm.expect(res.code).to.eql(200);\r",
+											"    });\r",
+											"});"
+										],
+										"type": "text/javascript",
+										"packages": {},
+										"requests": {}
+									}
+								},
+								{
+									"listen": "prerequest",
+									"script": {
+										"exec": [
+											"pm.sendRequest({\r",
+											"    url: pm.collectionVariables.get(\"base_url\") + \"/carts\",\r",
+											"    method: \"POST\",\r",
+											"    header: {\r",
+											"        \"Content-Type\": \"application/json\"\r",
+											"    }\r",
+											"}, function (err, res) {\r",
+											"    const jsonData = res.json();\r",
+											"    pm.environment.set(\"cart_id\", jsonData.id);\r",
 											"});"
 										],
 										"type": "text/javascript",
@@ -1194,11 +1240,41 @@
 											"pm.test(\"Delete product from cart - status code is 204\", function () {\r",
 											"    pm.response.to.have.status(204);\r",
 											"});\r",
+											"\r",
+											"const baseUrl = pm.collectionVariables.get(\"base_url\");\r",
+											"const cartId = pm.environment.get(\"cart_id\");\r",
+											"const productId = pm.environment.get(\"product_id\");\r",
+											"\r",
+											"pm.sendRequest({\r",
+											"    url: `${baseUrl}/carts/${cartId}/product/quantity`,\r",
+											"    method: \"PUT\",\r",
+											"    header: {\r",
+											"        \"Content-Type\": \"application/json\"\r",
+											"    },\r",
+											"    body: {\r",
+											"        mode: \"raw\",\r",
+											"        raw: JSON.stringify({\r",
+											"            \"product_id\": productId,\r",
+											"            \"quantity\": 2\r",
+											"        })\r",
+											"    }\r",
+											"}, function (err, res) {\r",
+											"    pm.test(\"Add product to cart - check if created\", function () {\r",
+											"        pm.expect(res.code).to.eql(200);\r",
+											"    });\r",
+											"});\r",
 											""
 										],
 										"type": "text/javascript",
 										"packages": {},
 										"requests": {}
+									}
+								},
+								{
+									"listen": "prerequest",
+									"script": {
+										"packages": {},
+										"type": "text/javascript"
 									}
 								}
 							],
@@ -1286,12 +1362,31 @@
 											"});\r",
 											"const jsonData = pm.response.json();\r",
 											"const productId = pm.environment.get(\"product_id\");\r",
-											"pm.test(\"Store new favorite - correct result values\", function () {\r",
-											"    pm.expect(jsonData.product_id).to.eql(productId);\r",
+											"const user_id = pm.environment.get(\"user_id\");\r",
+											"\r",
+											"pm.test(\"Store new favorite - response contains expected fields\", function () {\r",
+											"    const jsonData = pm.response.json();\r",
+											"    pm.expect(jsonData).to.have.property(\"product_id\");\r",
+											"    pm.expect(jsonData).to.have.property(\"user_id\");\r",
 											"    pm.expect(jsonData).to.have.property(\"id\");\r",
 											"});\r",
 											"\r",
-											"pm.environment.set(\"favorite_id\", jsonData.id);"
+											"pm.test(\"Store new favorite - fields have correct types\", function () {\r",
+											"    const jsonData = pm.response.json();\r",
+											"    pm.expect(jsonData.product_id).to.be.a(\"string\").and.not.empty;\r",
+											"    pm.expect(jsonData.user_id).to.be.a(\"string\").and.not.empty;\r",
+											"    pm.expect(jsonData.id).to.be.a(\"string\").and.not.empty;\r",
+											"});\r",
+											"\r",
+											"\r",
+											"pm.test(\"Store new favorite - correct result values\", function () {\r",
+											"    pm.expect(jsonData.product_id).to.eql(productId);\r",
+											"    pm.expect(jsonData.user_id).to.eql(user_id);\r",
+											"    pm.expect(jsonData).to.have.property(\"id\");\r",
+											"});\r",
+											"\r",
+											"pm.environment.set(\"favorite_id\", jsonData.id);\r",
+											""
 										],
 										"type": "text/javascript",
 										"packages": {},
@@ -1379,6 +1474,21 @@
 										"exec": [
 											"pm.test(\"Delete favorite - status code is or 204\", function () {\r",
 											"    pm.response.to.have.status(204);\r",
+											"});\r",
+											"\r",
+											"const favorite_id = pm.environment.get(\"favorite_id\");\r",
+											"\r",
+											"pm.sendRequest({\r",
+											"    url: pm.collectionVariables.get(\"base_url\") + `/favorite/${favorite_id}`,\r",
+											"    method: \"GET\",\r",
+											"    header: {\r",
+											"        \"Authorization\": \"Bearer \" + pm.environment.get(\"token\"),\r",
+											"        \"Content-Type\": \"application/json\"\r",
+											"    }\r",
+											"}, function (err, res) {\r",
+											"        pm.test(\"Store new favorite - check if deleted\", function () {\r",
+											"            pm.expect(res.code).to.eql(404);\r",
+											"        });\r",
 											"});"
 										],
 										"type": "text/javascript",
@@ -1481,37 +1591,6 @@
 					"name": "Store new invoice",
 					"item": [
 						{
-							"name": "Create new cart (set up)",
-							"event": [
-								{
-									"listen": "test",
-									"script": {
-										"exec": [
-											"const jsonData = pm.response.json();\r",
-											"pm.environment.set(\"cart_id\", jsonData.id);"
-										],
-										"type": "text/javascript",
-										"packages": {},
-										"requests": {}
-									}
-								}
-							],
-							"request": {
-								"method": "POST",
-								"header": [],
-								"url": {
-									"raw": "{{base_url}}/carts",
-									"host": [
-										"{{base_url}}"
-									],
-									"path": [
-										"carts"
-									]
-								}
-							},
-							"response": []
-						},
-						{
 							"name": "Store new invoice - happy path",
 							"event": [
 								{
@@ -1524,6 +1603,35 @@
 											"\r",
 											"const jsonData = pm.response.json();\r",
 											"\r",
+											"pm.test(\"Store new invoice - response contains all main expected fields\", function () {\r",
+											"    const expectedFields = [\r",
+											"        \"billing_street\",\r",
+											"        \"billing_city\",\r",
+											"        \"billing_state\",\r",
+											"        \"billing_country\",\r",
+											"        \"billing_postal_code\",\r",
+											"        \"user_id\",\r",
+											"        \"invoice_date\",\r",
+											"        \"invoice_number\",\r",
+											"        \"id\"\r",
+											"    ];\r",
+											"    expectedFields.forEach(field => {\r",
+											"        pm.expect(jsonData).to.have.property(field);\r",
+											"    });\r",
+											"});\r",
+											"\r",
+											"pm.test(\"Store new invoice - fields have correct types\", function () {\r",
+											"    pm.expect(jsonData.billing_street).to.be.a(\"string\");\r",
+											"    pm.expect(jsonData.billing_city).to.be.a(\"string\");\r",
+											"    pm.expect(jsonData.billing_state).to.be.a(\"string\");\r",
+											"    pm.expect(jsonData.billing_country).to.be.a(\"string\");\r",
+											"    pm.expect(jsonData.billing_postal_code).to.be.a(\"string\");\r",
+											"    pm.expect(jsonData.user_id).to.be.a(\"string\");\r",
+											"    pm.expect(jsonData.invoice_number).to.be.a(\"string\");\r",
+											"    pm.expect(jsonData.id).to.be.a(\"string\");\r",
+											"});\r",
+											"\r",
+											"\r",
 											"pm.test(\"Store new invoice - correct response values\", function () {\r",
 											"    pm.expect(jsonData).to.have.property(\"id\");\r",
 											"    pm.expect(jsonData.billing_street).to.eql(\"Street\");\r",
@@ -1533,7 +1641,40 @@
 											"    pm.expect(jsonData.billing_postal_code).to.eql(\"Code\");\r",
 											"});\r",
 											"\r",
-											"pm.environment.set(\"invoice_id\", jsonData.id);"
+											"pm.environment.set(\"invoice_id\", jsonData.id);\r",
+											"\r",
+											"pm.sendRequest({\r",
+											"    url: pm.collectionVariables.get(\"base_url\") + `/invoices/${jsonData.id}`,\r",
+											"    method: \"GET\",\r",
+											"    header: {\r",
+											"        \"Authorization\": \"Bearer \" + pm.environment.get(\"token\"),\r",
+											"        \"Content-Type\": \"application/json\"\r",
+											"    }\r",
+											"}, function (err, res) {\r",
+											"        pm.test(\"Store new invoice - check if created\", function () {\r",
+											"            pm.expect(res.code).to.eql(200);\r",
+											"        });\r",
+											"});"
+										],
+										"type": "text/javascript",
+										"packages": {},
+										"requests": {}
+									}
+								},
+								{
+									"listen": "prerequest",
+									"script": {
+										"exec": [
+											"pm.sendRequest({\r",
+											"    url: pm.collectionVariables.get(\"base_url\") + \"/carts\",\r",
+											"    method: \"POST\",\r",
+											"    header: {\r",
+											"        \"Content-Type\": \"application/json\"\r",
+											"    }\r",
+											"}, function (err, res) {\r",
+											"    const jsonData = res.json();\r",
+											"    pm.environment.set(\"cart_id\", jsonData.id);\r",
+											"});"
 										],
 										"type": "text/javascript",
 										"packages": {},
@@ -1627,6 +1768,24 @@
 											"pm.test(\"Update invoice - correct message\", function () {\r",
 											"    pm.expect(jsonData.success).to.be.true;\r",
 											"});\r",
+											"\r",
+											"const invoice_id = pm.environment.get(\"invoice_id\");\r",
+											"\r",
+											"pm.sendRequest({\r",
+											"    url: pm.collectionVariables.get(\"base_url\") + `/invoices/${invoice_id}`,\r",
+											"    method: \"GET\",\r",
+											"    header: {\r",
+											"        \"Authorization\": \"Bearer \" + pm.environment.get(\"token\"),\r",
+											"        \"Content-Type\": \"application/json\"\r",
+											"    }\r",
+											"}, function (err, res) {\r",
+											"        const invoiceData = res.json();\r",
+											"\r",
+											"        pm.test(\"Update invoice - correct new value\", function () {\r",
+											"            pm.expect(invoiceData.billing_street).to.eql(\"new street\");\r",
+											"    });\r",
+											"});\r",
+											"\r",
 											""
 										],
 										"type": "text/javascript",
@@ -1646,49 +1805,6 @@
 											"language": "json"
 										}
 									}
-								},
-								"url": {
-									"raw": "{{base_url}}/invoices/{{invoice_id}}",
-									"host": [
-										"{{base_url}}"
-									],
-									"path": [
-										"invoices",
-										"{{invoice_id}}"
-									]
-								}
-							},
-							"response": []
-						},
-						{
-							"name": "Get invoice",
-							"event": [
-								{
-									"listen": "test",
-									"script": {
-										"exec": [
-											"const jsonData = pm.response.json();\r",
-											"\r",
-											"pm.test(\"Update invoice - check updated value\", function () {\r",
-											"    pm.expect(jsonData.billing_street).to.eql(\"new street\");\r",
-											"});\r",
-											""
-										],
-										"type": "text/javascript",
-										"packages": {},
-										"requests": {}
-									}
-								}
-							],
-							"protocolProfileBehavior": {
-								"disableBodyPruning": true
-							},
-							"request": {
-								"method": "GET",
-								"header": [],
-								"body": {
-									"mode": "raw",
-									"raw": "{\r\n  \"billing_street\": \"new street\",\r\n  \"billing_city\": \"City\",\r\n  \"billing_state\": \"State\",\r\n  \"billing_country\": \"Country\",\r\n  \"billing_postal_code\": \"Code\",\r\n  \"payment_method\": \"cash-on-delivery\",\r\n  \"cart_id\": \"{{cart_id}}\",\r\n  \"payment_details\": {\r\n  }\r\n}"
 								},
 								"url": {
 									"raw": "{{base_url}}/invoices/{{invoice_id}}",
@@ -1783,267 +1899,6 @@
 					}
 				}
 			]
-		},
-		{
-			"name": "Contact Service",
-			"item": [
-				{
-					"name": "Set a new message status",
-					"item": [
-						{
-							"name": "Login to admin (set up)",
-							"event": [
-								{
-									"listen": "test",
-									"script": {
-										"exec": [
-											"const jsonData = pm.response.json();\r",
-											"pm.environment.set(\"admin_token\", jsonData.access_token);"
-										],
-										"type": "text/javascript",
-										"packages": {},
-										"requests": {}
-									}
-								}
-							],
-							"request": {
-								"auth": {
-									"type": "noauth"
-								},
-								"method": "POST",
-								"header": [],
-								"body": {
-									"mode": "raw",
-									"raw": "{\r\n  \"email\" : \"admin@practicesoftwaretesting.com\",\r\n  \"password\" : \"welcome01\"\r\n}",
-									"options": {
-										"raw": {
-											"language": "json"
-										}
-									}
-								},
-								"url": {
-									"raw": "{{base_url}}/users/login",
-									"host": [
-										"{{base_url}}"
-									],
-									"path": [
-										"users",
-										"login"
-									]
-								}
-							},
-							"response": []
-						},
-						{
-							"name": "Send new contact message (set up)",
-							"event": [
-								{
-									"listen": "test",
-									"script": {
-										"exec": [
-											"const jsonData = pm.response.json();\r",
-											"pm.environment.set(\"message_id\", jsonData.id);"
-										],
-										"type": "text/javascript",
-										"packages": {},
-										"requests": {}
-									}
-								}
-							],
-							"request": {
-								"auth": {
-									"type": "bearer",
-									"bearer": [
-										{
-											"key": "token",
-											"value": "{{token}}",
-											"type": "string"
-										}
-									]
-								},
-								"method": "POST",
-								"header": [],
-								"body": {
-									"mode": "raw",
-									"raw": "{\r\n  \"name\": \"John Doe\",\r\n  \"email\": \"john@doe.example\",\r\n  \"subject\": \"website\",\r\n  \"message\": \"Something is wrong with the website.\"\r\n}",
-									"options": {
-										"raw": {
-											"language": "json"
-										}
-									}
-								},
-								"url": {
-									"raw": "{{base_url}}/messages",
-									"host": [
-										"{{base_url}}"
-									],
-									"path": [
-										"messages"
-									]
-								}
-							},
-							"response": []
-						},
-						{
-							"name": "Set a new message status - happy path",
-							"event": [
-								{
-									"listen": "test",
-									"script": {
-										"exec": [
-											"pm.test(\"Set message status - status code is 200\", function () {\r",
-											"    pm.response.to.have.status(200);\r",
-											"});\r",
-											"\r",
-											"const jsonData = pm.response.json();\r",
-											"\r",
-											"pm.test(\"Set message status - correct message\", function () {\r",
-											"    pm.expect(jsonData.success).to.be.true;\r",
-											"});"
-										],
-										"type": "text/javascript",
-										"packages": {},
-										"requests": {}
-									}
-								}
-							],
-							"request": {
-								"auth": {
-									"type": "bearer",
-									"bearer": [
-										{
-											"key": "token",
-											"value": "{{admin_token}}",
-											"type": "string"
-										}
-									]
-								},
-								"method": "PUT",
-								"header": [],
-								"body": {
-									"mode": "raw",
-									"raw": "{\r\n  \"status\": \"RESOLVED\"\r\n}",
-									"options": {
-										"raw": {
-											"language": "json"
-										}
-									}
-								},
-								"url": {
-									"raw": "{{base_url}}/messages/{{message_id}}/status",
-									"host": [
-										"{{base_url}}"
-									],
-									"path": [
-										"messages",
-										"{{message_id}}",
-										"status"
-									]
-								}
-							},
-							"response": []
-						},
-						{
-							"name": "Get message",
-							"event": [
-								{
-									"listen": "test",
-									"script": {
-										"exec": [
-											"const jsonData = pm.response.json();\r",
-											"\r",
-											"pm.test(\"Set message status - correct new values\", function () {\r",
-											"    pm.expect(jsonData.status).to.include(\"RESOLVED\");\r",
-											"});"
-										],
-										"type": "text/javascript",
-										"packages": {},
-										"requests": {}
-									}
-								}
-							],
-							"request": {
-								"auth": {
-									"type": "bearer",
-									"bearer": [
-										{
-											"key": "token",
-											"value": "{{admin_token}}",
-											"type": "string"
-										}
-									]
-								},
-								"method": "GET",
-								"header": [],
-								"url": {
-									"raw": "{{base_url}}/messages/{{message_id}}",
-									"host": [
-										"{{base_url}}"
-									],
-									"path": [
-										"messages",
-										"{{message_id}}"
-									]
-								}
-							},
-							"response": []
-						},
-						{
-							"name": "Set a new message status - negative path (incorrect status)",
-							"event": [
-								{
-									"listen": "test",
-									"script": {
-										"exec": [
-											"pm.test(\"Set message status - status code is 404\", function () {\r",
-											"    pm.response.to.have.status(404);\r",
-											"});"
-										],
-										"type": "text/javascript",
-										"packages": {},
-										"requests": {}
-									}
-								}
-							],
-							"request": {
-								"auth": {
-									"type": "bearer",
-									"bearer": [
-										{
-											"key": "token",
-											"value": "{{admin_token}}",
-											"type": "string"
-										}
-									]
-								},
-								"method": "PUT",
-								"header": [],
-								"body": {
-									"mode": "raw",
-									"raw": "{\r\n  \"status\": \"STATUS\"\r\n}",
-									"options": {
-										"raw": {
-											"language": "json"
-										}
-									}
-								},
-								"url": {
-									"raw": "{{base_url}}/messages/{{message_id}}/status",
-									"host": [
-										"{{base_url}}"
-									],
-									"path": [
-										"messages",
-										"{{message_id}}",
-										"status"
-									]
-								}
-							},
-							"response": []
-						}
-					]
-				}
-			]
 		}
 	],
 	"event": [
@@ -2052,6 +1907,7 @@
 			"script": {
 				"type": "text/javascript",
 				"packages": {},
+				"requests": {},
 				"exec": [
 					""
 				]
@@ -2062,6 +1918,7 @@
 			"script": {
 				"type": "text/javascript",
 				"packages": {},
+				"requests": {},
 				"exec": [
 					""
 				]
