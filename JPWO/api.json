@@ -665,7 +665,7 @@
 					"name": "Partially update specific category",
 					"item": [
 						{
-							"name": "Partially update specific category - happy path",
+							"name": "Update specific category - happy path",
 							"event": [
 								{
 									"listen": "test",
@@ -710,7 +710,7 @@
 								}
 							],
 							"request": {
-								"method": "PATCH",
+								"method": "PUT",
 								"header": [],
 								"body": {
 									"mode": "raw",
@@ -735,7 +735,7 @@
 							"response": []
 						},
 						{
-							"name": "Partially update specific category - negative path (empty name)",
+							"name": "Update specific category - negative path (empty name)",
 							"event": [
 								{
 									"listen": "test",
@@ -752,7 +752,7 @@
 								}
 							],
 							"request": {
-								"method": "PATCH",
+								"method": "PUT",
 								"header": [],
 								"body": {
 									"mode": "raw",
