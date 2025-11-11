@@ -32,7 +32,6 @@ public class AccountPage {
     }
 
     public String getTitle() {
-        // upewniamy się, że element jest widoczny przed pobraniem tekstu
         WebElement titleElement = wait.until(ExpectedConditions.visibilityOfElementLocated(title));
         return titleElement.getText();
     }
