@@ -1,7 +1,9 @@
 package com.ui.tests;
 
+import com.ui.pages.AddBrandPage;
 import com.ui.pages.AddCategoryPage;
 import com.ui.pages.AddProductPage;
+import com.ui.pages.BrandAdminPage;
 import com.ui.pages.CategoryAdminPage;
 import com.ui.pages.LoginPage;
 import com.ui.pages.ProductAdminPage;
@@ -21,6 +23,8 @@ public class AddProductTest {
     private ProductAdminPage productAdminPage;
     private AddCategoryPage addCategoryPage;
     private CategoryAdminPage categoryAdminPage;
+    private AddBrandPage addBrandPage;
+    private BrandAdminPage brandAdminPage;
 
     @BeforeEach
     void setUp() {
@@ -33,6 +37,8 @@ public class AddProductTest {
         productAdminPage = new ProductAdminPage(driver);
         addCategoryPage = new AddCategoryPage(driver);
         categoryAdminPage = new CategoryAdminPage(driver);
+        addBrandPage = new AddBrandPage(driver);
+        brandAdminPage = new BrandAdminPage(driver);
     }
 
     @Test
@@ -62,6 +68,20 @@ public class AddProductTest {
         String addedCategorySlug = categoryAdminPage.getCategorySlug(uniqueCategoryName);
         assertEquals(uniqueCategoryName, addedCategoryName);
         assertEquals(uniqueSlug, addedCategorySlug);
+    }
+
+    @Test
+    void shouldAddNewBrand() {
+        String uniqueBrandName = "New Brand " + System.currentTimeMillis();
+        String uniqueSlug = "new-brand-" + System.currentTimeMillis();
+        addBrandPage.open();
+        addBrandPage.fillForm(uniqueBrandName, uniqueSlug);
+        brandAdminPage.open();
+        brandAdminPage.search(uniqueBrandName);
+        String addedBrandName = brandAdminPage.getBrandName(uniqueBrandName);
+        String addedBrandSlug = brandAdminPage.getBrandSlug(uniqueBrandName);
+        assertEquals(uniqueBrandName, addedBrandName);
+        assertEquals(uniqueSlug, addedBrandSlug);
     }
 
     @AfterEach
