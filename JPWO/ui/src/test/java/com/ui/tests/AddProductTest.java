@@ -1,6 +1,8 @@
 package com.ui.tests;
 
+import com.ui.pages.AddCategoryPage;
 import com.ui.pages.AddProductPage;
+import com.ui.pages.CategoryAdminPage;
 import com.ui.pages.LoginPage;
 import com.ui.pages.ProductAdminPage;
 import org.junit.jupiter.api.AfterEach;
@@ -17,6 +19,8 @@ public class AddProductTest {
     private LoginPage loginPage;
     private AddProductPage addProductPage;
     private ProductAdminPage productAdminPage;
+    private AddCategoryPage addCategoryPage;
+    private CategoryAdminPage categoryAdminPage;
 
     @BeforeEach
     void setUp() {
@@ -27,21 +31,37 @@ public class AddProductTest {
         loginPage.loginAsAdmin("admin@practicesoftwaretesting.com", "welcome01");
         addProductPage = new AddProductPage(driver);
         productAdminPage = new ProductAdminPage(driver);
+        addCategoryPage = new AddCategoryPage(driver);
+        categoryAdminPage = new CategoryAdminPage(driver);
     }
 
     @Test
     void shouldAddNewProduct() throws InterruptedException {
-        // SPRÓBOWAĆ TUTAJ JAKIEJŚ UNIKALNEJ NAZWY ZEBY NIE BYLO ZE STALA NAZWA JUZ ISTNIEJE
+        String uniqueProductName = "New Product " + System.currentTimeMillis();
         addProductPage.open();
-        addProductPage.fillForm("Nowy Produkt", "Opis nowego produktu", 100, 29.99,
+        addProductPage.fillForm(uniqueProductName, "New product's description", 100, 29.99,
                 "ForgeFlex Tools", "Hand Tools", "Hammer");
         productAdminPage.open();
-        productAdminPage.search("Nowy Produkt");
-        String addedProductName = productAdminPage.getProductName("Nowy Produkt");
-        String addedProductPrice = productAdminPage.getProductPrice("Nowy Produkt");
+        productAdminPage.search(uniqueProductName);
+        String addedProductName = productAdminPage.getProductName(uniqueProductName);
+        String addedProductPrice = productAdminPage.getProductPrice(uniqueProductName);
 
-        assertEquals("Nowy Produkt", addedProductName);
+        assertEquals(uniqueProductName, addedProductName);
         assertEquals("$29.99", addedProductPrice);
+    }
+
+    @Test
+    void shouldAddNewCategory() {
+        String uniqueCategoryName = "New Category " + System.currentTimeMillis();
+        String uniqueSlug = "new-category-" + System.currentTimeMillis();
+        addCategoryPage.open();
+        addCategoryPage.fillForm(uniqueCategoryName, uniqueSlug);
+        categoryAdminPage.open();
+        categoryAdminPage.search(uniqueCategoryName);
+        String addedCategoryName = categoryAdminPage.getCategoryName(uniqueCategoryName);
+        String addedCategorySlug = categoryAdminPage.getCategorySlug(uniqueCategoryName);
+        assertEquals(uniqueCategoryName, addedCategoryName);
+        assertEquals(uniqueSlug, addedCategorySlug);
     }
 
     @AfterEach
