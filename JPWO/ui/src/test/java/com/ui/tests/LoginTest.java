@@ -13,6 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class LoginTest {
     private WebDriver driver;
     private LoginPage loginPage;
+    private AccountPage accountPage;
 
     @BeforeEach
     void setUp() {
@@ -22,13 +23,14 @@ public class LoginTest {
 
         driver.get("http://localhost:4200/auth/login");
         loginPage = new LoginPage(driver);
+        accountPage = new AccountPage(driver);
     }
 
     @Test
     void shouldLoginSuccessfully() {
         assertTrue(loginPage.isLoaded(), "Login page did not load properly");
 
-        AccountPage accountPage = loginPage.loginAs("customer@practicesoftwaretesting.com", "welcome01");
+        loginPage.loginAs("customer@practicesoftwaretesting.com", "welcome01");
         assertTrue(accountPage.isLoaded(), "Account page did not load properly");
         assertTrue(accountPage.getTitle().contains("My account"),
                 "User was not redirected to the dashboard");

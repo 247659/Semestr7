@@ -13,18 +13,15 @@ public class LoginPage {
     private WebDriver driver;
     private WebDriverWait wait;
 
-    // Lokatory elementów
     private By usernameField = By.id("email");
     private By passwordField = By.id("password");
     private By loginButton = By.cssSelector("[data-test='login-submit']");
 
-    // Konstruktor
     public LoginPage(WebDriver driver) {
         this.driver = driver;
         this.wait = new WebDriverWait(driver, Duration.ofSeconds(10));
     }
 
-    // Akcje / metody
     public void enterUsername(String username) {
         driver.findElement(usernameField).sendKeys(username);
     }
@@ -37,11 +34,12 @@ public class LoginPage {
         driver.findElement(loginButton).click();
     }
 
-    public AccountPage loginAs(String username, String password) {
+    public void loginAs(String username, String password) {
         enterUsername(username);
         enterPassword(password);
         clickLogin();
-        return new AccountPage(driver);
+
+        wait.until(ExpectedConditions.urlContains("/account"));
     }
 
     public void loginAsAdmin(String username, String password) {
