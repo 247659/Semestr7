@@ -1,4 +1,4 @@
-package com.ui.pages;
+package com.ui.pages.account;
 
 import org.openqa.selenium.By;
 import org.openqa.selenium.TimeoutException;

@@ -1,4 +1,4 @@
-package com.ui.pages;
+package com.ui.pages.category;
 
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
@@ -8,28 +8,28 @@ import org.openqa.selenium.support.ui.WebDriverWait;
 
 import java.time.Duration;
 
-public class AddBrandPage {
+public class AddCategoryPage {
 
     private WebDriver driver;
     private WebDriverWait wait;
 
-    private By brandNameField = By.cssSelector("[data-test='name']");
+    private By categoryNameField = By.cssSelector("[data-test='name']");
     private By slugField = By.cssSelector("[data-test='slug']");
     private By successMessage = By.className("alert-success");
 
-    private By submitButton = By.cssSelector("[data-test='brand-submit']");
+    private By submitButton = By.cssSelector("[data-test='category-submit']");
 
-    public AddBrandPage(WebDriver driver) {
+    public AddCategoryPage(WebDriver driver) {
         this.driver = driver;
         this.wait = new WebDriverWait(driver, Duration.ofSeconds(10));
     }
 
     public void open() {
-        driver.get("http://localhost:4200/admin/brands/add");
+        driver.get("http://localhost:4200/admin/categories/add");
     }
 
-    public void enterBrandName(String name) {
-        WebElement productName = wait.until(ExpectedConditions.visibilityOfElementLocated(brandNameField));
+    public void enterCategoryName(String name) {
+        WebElement productName = wait.until(ExpectedConditions.visibilityOfElementLocated(categoryNameField));
         productName.clear();
         productName.sendKeys(name);
     }
@@ -49,7 +49,7 @@ public class AddBrandPage {
     }
 
     public void fillForm(String name, String slug) {
-        enterBrandName(name);
+        enterCategoryName(name);
         enterSlug(slug);
         submitForm();
     }

@@ -1,7 +1,6 @@
-package com.ui.tests;
+package com.ui.pages.user;
 
-import com.ui.pages.AccountPage;
-import com.ui.pages.LoginPage;
+import com.ui.pages.account.AccountPage;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -17,7 +16,7 @@ public class LoginTest {
 
     @BeforeEach
     void setUp() {
-        System.setProperty("webdriver.chrome.driver", "C:\\Users\\Janek\\Downloads\\chromedriver-win64\\chromedriver.exe");
+//        System.setProperty("webdriver.chrome.driver", "C:\\Users\\Janek\\Downloads\\chromedriver-win64\\chromedriver.exe");
         driver = new ChromeDriver();
         driver.manage().window().maximize();
 
@@ -33,7 +32,7 @@ public class LoginTest {
         loginPage.loginAs("customer@practicesoftwaretesting.com", "welcome01");
         assertTrue(accountPage.isLoaded(), "Account page did not load properly");
         assertTrue(accountPage.getTitle().contains("My account"),
-                "User was not redirected to the dashboard");
+                "User was not redirected to the next page");
     }
 
     @AfterEach

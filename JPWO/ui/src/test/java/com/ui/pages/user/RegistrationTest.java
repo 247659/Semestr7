@@ -1,6 +1,5 @@
-package com.ui.tests;
+package com.ui.pages.user;
 
-import com.ui.pages.RegistrationPage;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -10,7 +9,7 @@ import org.openqa.selenium.chrome.ChromeDriver;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-public class ValidateRegistrationTest {
+public class RegistrationTest {
 
     private WebDriver driver;
     private RegistrationPage registrationPage;

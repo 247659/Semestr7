@@ -1,4 +1,4 @@
-package com.ui.pages;
+package com.ui.pages.brand;
 
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
@@ -6,23 +6,21 @@ import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 
-
-public class ProductAdminPage {
-
+public class BrandAdminPage {
     private WebDriver driver;
     private WebDriverWait wait;
 
-    private By searchField = By.cssSelector("[data-test='product-search-query']");
-    private By searchButton = By.cssSelector("[data-test='product-search-submit']");
+    private By searchField = By.cssSelector("[data-test='brand-search-query']");
+    private By searchButton = By.cssSelector("[data-test='brand-search-submit']");
 
 
-    public ProductAdminPage(WebDriver driver) {
+    public BrandAdminPage(WebDriver driver) {
         this.driver = driver;
         this.wait = new WebDriverWait(driver, java.time.Duration.ofSeconds(10));
     }
 
     public void open() {
-        driver.get("http://localhost:4200/admin/products");
+        driver.get("http://localhost:4200/admin/brands");
     }
 
     public void search(String query) {
@@ -37,14 +35,13 @@ public class ProductAdminPage {
         ));
     }
 
-    public String getProductPrice(String productName) {
-        String xpath = String.format("//tr[td[normalize-space(text())='%s']]/td[4]", productName);
+    public String getBrandName(String brandName) {
+        String xpath = String.format("//tr[td[normalize-space(text())='%s']]/td[2]", brandName);
         return driver.findElement(By.xpath(xpath)).getText();
     }
 
-    public String getProductName(String productName) {
-        String xpath = String.format("//tr[td[normalize-space(text())='%s']]/td[2]", productName);
+    public String getBrandSlug(String slug) {
+        String xpath = String.format("//tr[td[normalize-space(text())='%s']]/td[3]", slug);
         return driver.findElement(By.xpath(xpath)).getText();
     }
-
 }
