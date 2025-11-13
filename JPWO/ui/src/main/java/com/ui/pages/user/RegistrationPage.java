@@ -10,22 +10,22 @@ import java.time.Duration;
 
 public class RegistrationPage {
 
-    private WebDriver driver;
-    private WebDriverWait wait;
+    private final WebDriver driver;
+    private final WebDriverWait wait;
 
-    private By submitButton = By.cssSelector("[data-test='register-submit']");
+    private final By submitButton = By.cssSelector("[data-test='register-submit']");
 
-    private By firstNameErrorMessages = By.cssSelector("[data-test='first-name-error']");
-    private By lastNameErrorMessages = By.cssSelector("[data-test='last-name-error']");
-    private By emailErrorMessages = By.cssSelector("[data-test='email-error']");
-    private By passwordErrorMessages = By.cssSelector("[data-test='password-error']");
-    private By dobErrorMessages = By.cssSelector("[data-test='dob-error']");
-    private By streetErrorMessages = By.cssSelector("[data-test='street-error']");
-    private By cityErrorMessages = By.cssSelector("[data-test='city-error']");
-    private By stateErrorMessages = By.cssSelector("[data-test='state-error']");
-    private By countryErrorMessages = By.cssSelector("[data-test='country-error']");
-    private By phoneErrorMessages = By.cssSelector("[data-test='phone-error']");
-    private By postalCodeErrorMessages = By.cssSelector("[data-test='postal_code-error']");
+    private final By firstNameErrorMessages = By.cssSelector("[data-test='first-name-error']");
+    private final By lastNameErrorMessages = By.cssSelector("[data-test='last-name-error']");
+    private final By emailErrorMessages = By.cssSelector("[data-test='email-error']");
+    private final By passwordErrorMessages = By.cssSelector("[data-test='password-error']");
+    private final By dobErrorMessages = By.cssSelector("[data-test='dob-error']");
+    private final By streetErrorMessages = By.cssSelector("[data-test='street-error']");
+    private final By cityErrorMessages = By.cssSelector("[data-test='city-error']");
+    private final By stateErrorMessages = By.cssSelector("[data-test='state-error']");
+    private final By countryErrorMessages = By.cssSelector("[data-test='country-error']");
+    private final By phoneErrorMessages = By.cssSelector("[data-test='phone-error']");
+    private final By postalCodeErrorMessages = By.cssSelector("[data-test='postal_code-error']");
 
     public RegistrationPage(WebDriver driver) {
         this.driver = driver;

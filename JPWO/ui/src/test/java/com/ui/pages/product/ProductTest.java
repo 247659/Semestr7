@@ -15,7 +15,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class ProductTest {
 
     private WebDriver driver;
-    private LoginPage loginPage;
     private AddProductPage addProductPage;
     private ProductAdminPage productAdminPage;
     private ProductPage productPage;
@@ -25,7 +24,7 @@ public class ProductTest {
         driver = new ChromeDriver();
         driver.manage().window().maximize();
         driver.get("http://localhost:4200/auth/login");
-        loginPage = new LoginPage(driver);
+        LoginPage loginPage = new LoginPage(driver);
         loginPage.loginAsAdmin("admin@practicesoftwaretesting.com", "welcome01");
         addProductPage = new AddProductPage(driver);
         productAdminPage = new ProductAdminPage(driver);

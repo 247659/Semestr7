@@ -7,10 +7,10 @@ import org.openqa.selenium.support.ui.WebDriverWait;
 
 public class MessagesPage {
 
-    private WebDriver driver;
-    private WebDriverWait wait;
+    private final WebDriver driver;
+    private final WebDriverWait wait;
 
-    private By tableRows = By.cssSelector("table.table-hover");
+    private final By tableRows = By.cssSelector("table.table-hover");
 
     public MessagesPage(WebDriver driver) {
         this.driver = driver;

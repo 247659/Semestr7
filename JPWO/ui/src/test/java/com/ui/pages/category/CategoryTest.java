@@ -12,7 +12,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 public class CategoryTest {
 
     private WebDriver driver;
-    private LoginPage loginPage;
     private AddCategoryPage addCategoryPage;
     private CategoryAdminPage categoryAdminPage;
 
@@ -21,7 +20,7 @@ public class CategoryTest {
         driver = new ChromeDriver();
         driver.manage().window().maximize();
         driver.get("http://localhost:4200/auth/login");
-        loginPage = new LoginPage(driver);
+        LoginPage loginPage = new LoginPage(driver);
         loginPage.loginAsAdmin("admin@practicesoftwaretesting.com", "welcome01");
         addCategoryPage = new AddCategoryPage(driver);
         categoryAdminPage = new CategoryAdminPage(driver);

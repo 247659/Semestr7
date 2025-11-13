@@ -10,14 +10,14 @@ import java.time.Duration;
 
 public class AddBrandPage {
 
-    private WebDriver driver;
-    private WebDriverWait wait;
+    private final WebDriver driver;
+    private final WebDriverWait wait;
 
-    private By brandNameField = By.cssSelector("[data-test='name']");
-    private By slugField = By.cssSelector("[data-test='slug']");
-    private By successMessage = By.className("alert-success");
+    private final By brandNameField = By.cssSelector("[data-test='name']");
+    private final By slugField = By.cssSelector("[data-test='slug']");
+    private final By successMessage = By.className("alert-success");
 
-    private By submitButton = By.cssSelector("[data-test='brand-submit']");
+    private final By submitButton = By.cssSelector("[data-test='brand-submit']");
 
     public AddBrandPage(WebDriver driver) {
         this.driver = driver;

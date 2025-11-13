@@ -11,14 +11,11 @@ import java.time.Duration;
 
 public class AccountPage {
 
-    private WebDriver driver;
-    private WebDriverWait wait;
+    private final WebDriverWait wait;
 
-
-    private By title = By.cssSelector("[data-test='page-title']");
+    private final By title = By.cssSelector("[data-test='page-title']");
 
     public AccountPage(WebDriver driver) {
-        this.driver = driver;
         this.wait = new WebDriverWait(driver, Duration.ofSeconds(10));
     }
 

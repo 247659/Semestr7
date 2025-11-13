@@ -9,13 +9,13 @@ import org.openqa.selenium.support.ui.WebDriverWait;
 
 public class ContactPage {
 
-    private WebDriver driver;
-    private WebDriverWait wait;
+    private final WebDriver driver;
+    private final WebDriverWait wait;
 
-    private By subjectSelect = By.cssSelector("[data-test='subject']");
-    private By messageField = By.cssSelector("[data-test='message']");
-    private By sendButton = By.cssSelector("[data-test='contact-submit']");
-    private By successMessage = By.className("alert-success");
+    private final By subjectSelect = By.cssSelector("[data-test='subject']");
+    private final By messageField = By.cssSelector("[data-test='message']");
+    private final By sendButton = By.cssSelector("[data-test='contact-submit']");
+    private final By successMessage = By.className("alert-success");
 
     public ContactPage(WebDriver driver) {
         this.driver = driver;

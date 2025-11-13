@@ -16,7 +16,7 @@ public class LoginTest {
 
     @BeforeEach
     void setUp() {
-//        System.setProperty("webdriver.chrome.driver", "C:\\Users\\Janek\\Downloads\\chromedriver-win64\\chromedriver.exe");
+        System.setProperty("webdriver.chrome.driver", "C:\\Users\\Janek\\Downloads\\chromedriver-win64\\chromedriver.exe");
         driver = new ChromeDriver();
         driver.manage().window().maximize();
 

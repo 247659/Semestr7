@@ -8,11 +8,11 @@ import org.openqa.selenium.support.ui.WebDriverWait;
 
 public class CategoryAdminPage {
 
-    private WebDriver driver;
-    private WebDriverWait wait;
+    private final WebDriver driver;
+    private final WebDriverWait wait;
 
-    private By searchField = By.cssSelector("[data-test='category-search-query']");
-    private By searchButton = By.cssSelector("[data-test='category-search-submit']");
+    private final By searchField = By.cssSelector("[data-test='category-search-query']");
+    private final By searchButton = By.cssSelector("[data-test='category-search-submit']");
 
 
     public CategoryAdminPage(WebDriver driver) {

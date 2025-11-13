@@ -10,13 +10,11 @@ import java.time.Duration;
 
 public class CartPage {
 
-    private WebDriver driver;
-    private WebDriverWait wait;
+    private final WebDriverWait wait;
 
-    private By productName = By.cssSelector("[data-test='product-title']");
+    private final By productName = By.cssSelector("[data-test='product-title']");
 
     public CartPage(WebDriver driver) {
-        this.driver = driver;
         this.wait = new WebDriverWait(driver, Duration.ofSeconds(10));
     }
 

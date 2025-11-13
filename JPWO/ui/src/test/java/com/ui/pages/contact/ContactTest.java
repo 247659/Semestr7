@@ -12,7 +12,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class ContactTest {
     private WebDriver driver;
-    private LoginPage loginPage;
     private ContactPage contactPage;
     private MessagesPage messagesPage;
 
@@ -21,7 +20,7 @@ public class ContactTest {
         driver = new ChromeDriver();
         driver.manage().window().maximize();
         driver.get("http://localhost:4200/auth/login");
-        loginPage = new LoginPage(driver);
+        LoginPage loginPage = new LoginPage(driver);
         loginPage.loginAs("customer3@practicesoftwaretesting.com", "pass123");
         contactPage = new ContactPage(driver);
         messagesPage = new MessagesPage(driver);

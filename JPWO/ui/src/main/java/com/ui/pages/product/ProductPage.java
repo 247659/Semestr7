@@ -13,14 +13,14 @@ import java.util.stream.Collectors;
 
 public class ProductPage {
 
-    private WebDriver driver;
-    private WebDriverWait wait;
+    private final WebDriver driver;
+    private final WebDriverWait wait;
 
-    private By addToCartButton = By.cssSelector("[data-test='add-to-cart']");
-    private By cartBadge = By.cssSelector("[data-test='cart-quantity']");
-    private By cartButton = By.cssSelector("[data-test='nav-cart']");
-    private By productName = By.cssSelector("[data-test='product-name']");
-    private By searchField = By.cssSelector("[data-test='search-query']");
+    private final By addToCartButton = By.cssSelector("[data-test='add-to-cart']");
+    private final By cartBadge = By.cssSelector("[data-test='cart-quantity']");
+    private final By cartButton = By.cssSelector("[data-test='nav-cart']");
+    private final By productName = By.cssSelector("[data-test='product-name']");
+    private final By searchField = By.cssSelector("[data-test='search-query']");
 
     public ProductPage(WebDriver driver) {
         this.driver = driver;

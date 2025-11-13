@@ -11,19 +11,19 @@ import java.time.Duration;
 
 public class AddProductPage {
 
-    private WebDriver driver;
-    private WebDriverWait wait;
+    private final WebDriver driver;
+    private final WebDriverWait wait;
 
-    private By productNameField = By.cssSelector("[data-test='name']");
-    private By descriptionField = By.cssSelector("[data-test='description']");
-    private By stockField = By.cssSelector("[data-test='stock']");
-    private By priceField = By.cssSelector("[data-test='price']");
-    private By brandSelect = By.cssSelector("[data-test='brand-id']");
-    private By categorySelect = By.cssSelector("[data-test='category-id']");
-    private By imageSelect = By.cssSelector("[data-test='product-image-id']");
-    private By successMessage = By.className("alert-success");
+    private final By productNameField = By.cssSelector("[data-test='name']");
+    private final By descriptionField = By.cssSelector("[data-test='description']");
+    private final By stockField = By.cssSelector("[data-test='stock']");
+    private final By priceField = By.cssSelector("[data-test='price']");
+    private final By brandSelect = By.cssSelector("[data-test='brand-id']");
+    private final By categorySelect = By.cssSelector("[data-test='category-id']");
+    private final By imageSelect = By.cssSelector("[data-test='product-image-id']");
+    private final By successMessage = By.className("alert-success");
 
-    private By submitButton = By.cssSelector("[data-test='product-submit']");
+    private final By submitButton = By.cssSelector("[data-test='product-submit']");
 
     public AddProductPage(WebDriver driver) {
         this.driver = driver;

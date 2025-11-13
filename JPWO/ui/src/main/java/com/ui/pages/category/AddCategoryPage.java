@@ -10,14 +10,14 @@ import java.time.Duration;
 
 public class AddCategoryPage {
 
-    private WebDriver driver;
-    private WebDriverWait wait;
+    private final WebDriver driver;
+    private final WebDriverWait wait;
 
-    private By categoryNameField = By.cssSelector("[data-test='name']");
-    private By slugField = By.cssSelector("[data-test='slug']");
-    private By successMessage = By.className("alert-success");
+    private final By categoryNameField = By.cssSelector("[data-test='name']");
+    private final By slugField = By.cssSelector("[data-test='slug']");
+    private final By successMessage = By.className("alert-success");
 
-    private By submitButton = By.cssSelector("[data-test='category-submit']");
+    private final By submitButton = By.cssSelector("[data-test='category-submit']");
 
     public AddCategoryPage(WebDriver driver) {
         this.driver = driver;

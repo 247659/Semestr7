@@ -1,8 +1,6 @@
 package com.ui.pages.cart;
 
-import com.ui.pages.contact.ContactPage;
 import com.ui.pages.user.LoginPage;
-import com.ui.pages.contact.MessagesPage;
 import com.ui.pages.product.ProductPage;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -17,14 +15,13 @@ public class CartTest {
     private WebDriver driver;
     private ProductPage productPage;
     private CartPage cartPage;
-    private LoginPage loginPage;
 
     @BeforeEach
     void setUp() {
         driver = new ChromeDriver();
         driver.manage().window().maximize();
         driver.get("http://localhost:4200/auth/login");
-        loginPage = new LoginPage(driver);
+        LoginPage loginPage = new LoginPage(driver);
         loginPage.loginAs("customer3@practicesoftwaretesting.com", "pass123");
         productPage = new ProductPage(driver);
         cartPage = new CartPage(driver);

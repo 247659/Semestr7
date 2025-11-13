@@ -7,11 +7,11 @@ import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 
 public class BrandAdminPage {
-    private WebDriver driver;
-    private WebDriverWait wait;
+    private final WebDriver driver;
+    private final WebDriverWait wait;
 
-    private By searchField = By.cssSelector("[data-test='brand-search-query']");
-    private By searchButton = By.cssSelector("[data-test='brand-search-submit']");
+    private final By searchField = By.cssSelector("[data-test='brand-search-query']");
+    private final By searchButton = By.cssSelector("[data-test='brand-search-submit']");
 
 
     public BrandAdminPage(WebDriver driver) {

@@ -9,11 +9,11 @@ import org.openqa.selenium.support.ui.WebDriverWait;
 
 public class ProductAdminPage {
 
-    private WebDriver driver;
-    private WebDriverWait wait;
+    private final WebDriver driver;
+    private final WebDriverWait wait;
 
-    private By searchField = By.cssSelector("[data-test='product-search-query']");
-    private By searchButton = By.cssSelector("[data-test='product-search-submit']");
+    private final By searchField = By.cssSelector("[data-test='product-search-query']");
+    private final By searchButton = By.cssSelector("[data-test='product-search-submit']");
 
 
     public ProductAdminPage(WebDriver driver) {

@@ -10,12 +10,12 @@ import java.time.Duration;
 
 public class LoginPage {
 
-    private WebDriver driver;
-    private WebDriverWait wait;
+    private final WebDriver driver;
+    private final WebDriverWait wait;
 
-    private By usernameField = By.id("email");
-    private By passwordField = By.id("password");
-    private By loginButton = By.cssSelector("[data-test='login-submit']");
+    private final By usernameField = By.id("email");
+    private final By passwordField = By.id("password");
+    private final By loginButton = By.cssSelector("[data-test='login-submit']");
 
     public LoginPage(WebDriver driver) {
         this.driver = driver;
