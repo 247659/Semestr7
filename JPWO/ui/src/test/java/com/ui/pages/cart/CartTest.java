@@ -1,5 +1,6 @@
 package com.ui.pages.cart;
 
+import com.ui.pages.product.SingleProductPage;
 import com.ui.pages.user.LoginPage;
 import com.ui.pages.product.ProductPage;
 import org.junit.jupiter.api.AfterEach;
@@ -14,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class CartTest {
     private WebDriver driver;
     private ProductPage productPage;
+    private SingleProductPage singleProductPage;
     private CartPage cartPage;
 
     @BeforeEach
@@ -25,16 +27,18 @@ public class CartTest {
         loginPage.loginAs("customer3@practicesoftwaretesting.com", "pass123");
         productPage = new ProductPage(driver);
         cartPage = new CartPage(driver);
+        singleProductPage = new SingleProductPage(driver);
     }
 
     @Test
     void shouldAddProductToCart() {
-        productPage.open("01K8V39GY1R47X8K89E7DJ0HTX");
-
-        productPage.addToCart();
-        assertEquals(1, productPage.getCartCount(), "Cart should not be empty after adding a product");
-        productPage.openCartPage();
-        assertTrue(cartPage.containsProduct("Flat-Head Wood Screws"), "Cart does not contain the expected product");
+        driver.get("http://localhost:4200/");
+        productPage.openFirstProduct();
+        String productName = singleProductPage.getProductName();
+        singleProductPage.addToCart();
+        assertEquals(1, singleProductPage.getCartCount(), "Cart should not be empty after adding a product");
+        singleProductPage.openCartPage();
+        assertTrue(cartPage.containsProduct(productName), "Cart does not contain the expected product");
     }
 
 

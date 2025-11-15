@@ -1,7 +1,6 @@
 package com.ui.pages.product;
 
 import org.openqa.selenium.By;
-import org.openqa.selenium.NoSuchElementException;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.ui.ExpectedConditions;
@@ -16,10 +15,8 @@ public class ProductPage {
     private final WebDriver driver;
     private final WebDriverWait wait;
 
-    private final By addToCartButton = By.cssSelector("[data-test='add-to-cart']");
-    private final By cartBadge = By.cssSelector("[data-test='cart-quantity']");
-    private final By cartButton = By.cssSelector("[data-test='nav-cart']");
-    private final By productName = By.cssSelector("[data-test='product-name']");
+    private final By productNameInDashboard = By.cssSelector("[data-test='product-name']");
+    private final By productCards = By.cssSelector("a.card");
     private final By searchField = By.cssSelector("[data-test='search-query']");
 
     public ProductPage(WebDriver driver) {
@@ -31,27 +28,6 @@ public class ProductPage {
         driver.get("http://localhost:4200/product/" + productId);
     }
 
-    public void addToCart() {
-        WebElement button = wait.until(ExpectedConditions.elementToBeClickable(addToCartButton));
-        button.click();
-    }
-
-    public void openCartPage() {
-        WebElement button = wait.until(ExpectedConditions.elementToBeClickable(cartButton));
-        button.click();
-    }
-
-    public int getCartCount() {
-        try {
-            String countText = wait.until(
-                    ExpectedConditions.visibilityOfElementLocated(cartBadge)
-            ).getText();
-            return Integer.parseInt(countText);
-        } catch (NoSuchElementException e) {
-            return 0;
-        }
-    }
-
     public void search(String query) {
         WebElement searchInput = wait.until(ExpectedConditions.visibilityOfElementLocated(searchField));
         searchInput.clear();
@@ -60,12 +36,19 @@ public class ProductPage {
     }
 
     public List<String> getVisibleProductNames() {
-        wait.until(ExpectedConditions.visibilityOfElementLocated(productName));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(productNameInDashboard));
 
-        List<WebElement> elements = driver.findElements(productName);
+        List<WebElement> elements = driver.findElements(productNameInDashboard);
         return elements.stream()
                 .map(WebElement::getText)
                 .filter(name -> !name.isBlank())
                 .collect(Collectors.toList());
     }
+
+    public void openFirstProduct() {
+        wait.until(ExpectedConditions.visibilityOfElementLocated(productCards));
+        List<WebElement> products = driver.findElements(productCards);
+        products.getFirst().click();
+    }
+
 }
