@@ -4,6 +4,15 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
+from fractions import Fraction
+
+def parse_fraction(s):
+    """Konwertuje string na float, obsługując formę 'a/b'."""
+    try:
+        return float(Fraction(s))
+    except Exception:
+        raise ValueError(f"Niepoprawny format liczby: {s}")
+
 # -------------------------
 # Simplex z zapisem kroków
 # -------------------------
@@ -218,15 +227,15 @@ def solve():
     global button_show_steps
     try:
         # pobierz współczynniki funkcji celu
-        c1, c2 = float(entry_c1.get()), float(entry_c2.get())
+        c1, c2 = parse_fraction(entry_c1.get()), parse_fraction(entry_c2.get())
 
         # zbuduj A i b z obsługą ≤ ≥ =
         A_list = []
         b_list = []
         for r in entry_rows:
-            a = float(r['a1'].get())
-            c = float(r['a2'].get())
-            d = float(r['b'].get())
+            a = parse_fraction(r['a1'].get())
+            c = parse_fraction(r['a2'].get())
+            d = parse_fraction(r['b'].get())
             sign = r['sign'].get()
             if sign == "≤":
                 A_list.append([a, c]); b_list.append(d)
