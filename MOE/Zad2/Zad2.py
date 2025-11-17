@@ -28,9 +28,13 @@ def simplex_with_steps(c, A, b, eps=1e-9):
     tableau[:m, n:n+m] = np.eye(m)
     tableau[:m, -1] = b
     tableau[m, :n] = -c
+    # ostatnie m współczynników w wierszu celu to 0 (dla slacków)
     basis = [n + i for i in range(m)]
 
-    history = [(tableau.copy(), basis.copy())]
+    # przygotuj pełny wektor kosztów C_j dla wszystkich zmiennych (x + slack)
+    c_full = np.concatenate([c, np.zeros(m)])
+
+    history = [(tableau.copy(), basis.copy(), c_full.copy())]
 
     while True:
         obj_row = tableau[m, :-1]
@@ -56,7 +60,8 @@ def simplex_with_steps(c, A, b, eps=1e-9):
                 tableau[i, :] -= tableau[i, entering] * tableau[leaving_row, :]
 
         basis[leaving_row] = entering
-        history.append((tableau.copy(), basis.copy()))
+        # zapisujemy również c_full do historii, żeby kalkulacje Zj mogły używać oryginalnych C_j
+        history.append((tableau.copy(), basis.copy(), c_full.copy()))
 
     # odczyt rozwiązania
     x = np.zeros(n + m)
@@ -334,7 +339,7 @@ def solve():
 
         if history is not None:
             # analiza ostatniego tableau na wielokrotne rozwiązania
-            tableau, basis = history[-1]
+            tableau, basis, c_full = history[-1]
             obj_row = tableau[-1, :-1]
             # non-basic vars are those not in basis (indices)
             non_basic_vars = [i for i in range(len(obj_row)) if i not in basis]
@@ -401,13 +406,15 @@ class SimplexVisualizer(tk.Toplevel):
     def __init__(self, root, history):
         super().__init__(root)
         self.title("Kroki metody Simplex")
-        self.geometry("900x600")
+        self.geometry("1000x600")
+        # history: lista tuple (tableau, basis, c_full)
         self.history = history
         self.index = 0
 
         self.label = ttk.Label(self, text=f"Iteracja 1 z {len(history)}", font=("Arial", 14, "bold"))
         self.label.pack(pady=10)
 
+        # treeview z nagłówkami
         self.tree = ttk.Treeview(self, show='headings')
         self.tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
@@ -420,22 +427,64 @@ class SimplexVisualizer(tk.Toplevel):
 
     def show_iteration(self, i):
         self.index = i
-        tableau, basis = self.history[i]
+        tableau, basis, c_full = self.history[i]
         rows, cols = tableau.shape
-        headers = [f"x{j+1}" for j in range(cols-1)] + ["RHS"]
+        nvars = cols - 1  # liczba kolumn bez RHS
+
+        # nagłówki: Baza, x1..x_n, RHS, Zj, Δj
+        var_headers = [f"x{j+1}" for j in range(nvars)]
+        headers = ["Baza"] + var_headers + ["Bi"]
 
         self.tree.delete(*self.tree.get_children())
         self.tree["columns"] = headers
         for h in headers:
             self.tree.heading(h, text=h)
+            # dostosuj szerokość kolumn (możesz zmienić)
             self.tree.column(h, anchor="center", width=80)
 
-        for r in range(rows-1):
-            self.tree.insert("", "end", values=[f"{v:.6f}" for v in tableau[r]])
-        self.tree.insert("", "end", values=["—"]*(cols-1) + ["—"])
-        self.tree.insert("", "end", values=[f"{v:.6f}" for v in tableau[-1]])
+        # OBLICZENIE Zj:
+        # Zj = sum_{i in basis rows} c_{b_i} * a_{i,j}
+        # gdzie c_{b_i} bierze się z c_full[basis[i]]
+        Zj = np.zeros(nvars)
+        for r in range(rows - 1):  # tylko wiersze ograniczeń
+            bi = basis[r]
+            cb = c_full[bi] if bi < len(c_full) else 0.0
+            Zj += cb * tableau[r, :-1]
 
-        self.label.config(text=f"Iteracja {i+1} z {len(self.history)}  |  Baza: {', '.join(['x'+str(b+1) for b in basis])}")
+        # Cj = c_full
+        Cj = np.array(c_full[:nvars])
+        Dj = Zj - Cj
+
+        # Wypełnij wiersze (wiersze ograniczeń)
+        for r in range(rows - 1):
+            bazowa = f"x{basis[r] + 1}"
+            row_vals = [bazowa] + [f"{v:.6f}" for v in tableau[r, :-1]] + [f"{tableau[r, -1]:.6f}", "", ""]
+            self.tree.insert("", "end", values=row_vals)
+
+        # separator
+        self.tree.insert("", "end", values=["—"] * len(headers))
+
+        cols_minus_rhs = len(c_full)  # liczba zmiennych
+        Zj = []
+        # licz Zj dla wszystkich kolumn, w tym RHS
+        for j in range(cols_minus_rhs + 1):  # +1 aby wziąć ostatnią kolumnę RHS
+            suma = 0
+            for r in range(len(basis)):
+                c_b = c_full[basis[r]]
+                suma += c_b * tableau[r, j]
+            Zj.append(suma)
+
+        # Δj = Cj – Zj (tylko dla kolumn zmiennych)
+        Delta_j = [c_full[j] - Zj[j] for j in range(cols_minus_rhs)]
+
+        # wstawienie wierszy Zj i Δj do Treeview
+        values_zj = ["Zj"] + [f"{v:.6f}" for v in Zj[:-1]] + [f"{Zj[-1]:.6f}"]
+        self.tree.insert("", "end", values=values_zj)
+
+        values_delta = ["Δj"] + [f"{v:.6f}" for v in Delta_j] + [""]
+        self.tree.insert("", "end", values=values_delta)
+
+        self.label.config(text=f"Iteracja {i+1} z {len(self.history)}")
 
     def next(self):
         if self.index < len(self.history)-1:
