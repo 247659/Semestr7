@@ -19,6 +19,7 @@ public class SingleProductPage {
     private final By cartBadge = By.cssSelector("[data-test='cart-quantity']");
     private final By cartButton = By.cssSelector("[data-test='nav-cart']");
     private final By productName = By.cssSelector("[data-test='product-name']");
+    private final By toastMessage = By.className("toast-message");
 
     public SingleProductPage(WebDriver driver) {
         this.driver = driver;
@@ -33,6 +34,7 @@ public class SingleProductPage {
     public void addToFavorites() {
         WebElement button = wait.until(ExpectedConditions.elementToBeClickable(addToFavoriteButton));
         button.click();
+        wait.until(ExpectedConditions.visibilityOfElementLocated(toastMessage));
     }
 
     public void openCartPage() {
