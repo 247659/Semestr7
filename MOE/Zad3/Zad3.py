@@ -9,25 +9,34 @@ import copy
 # =============================================================================
 
 class TransportationSolver:
-    def __init__(self, costs, supply, demand):
-        self.orig_costs = np.array(costs, dtype=float)
+    def __init__(self, costs, supply, demand, goal="MIN"):
+        self.goal = goal  # "MIN" lub "MAX"
+
+        # Konwersja na float
+        self.orig_costs_input = np.array(costs, dtype=float)
         self.orig_supply = np.array(supply, dtype=float)
         self.orig_demand = np.array(demand, dtype=float)
 
-        # Kopia robocza
-        self.costs = self.orig_costs.copy()
+        # JEŚLI MAKSYMALIZACJA -> Zamieniamy koszty na przeciwne (mnożymy przez -1)
+        if self.goal == "MAX":
+            self.costs = self.orig_costs_input * -1
+        else:
+            self.costs = self.orig_costs_input.copy()
+
         self.supply = self.orig_supply.copy()
         self.demand = self.orig_demand.copy()
+
         self.rows, self.cols = self.costs.shape
         self.allocation = np.zeros((self.rows, self.cols))
 
-        # Historia kroków do wizualizacji (lista krotek: (opis_kroku, kopia_alokacji))
+        # Historia kroków do wizualizacji
         self.history = []
 
         self.balance_problem()
 
-        # Zapisz stan początkowy (pusta tabela)
-        self.log_step("Stan początkowy (po zbilansowaniu)")
+        # Zapisz stan początkowy
+        goal_desc = "Maksymalizacja (Zyski zamienione na ujemne)" if self.goal == "MAX" else "Minimalizacja"
+        self.log_step(f"Stan początkowy ({goal_desc}, po zbilansowaniu)")
 
     def log_step(self, description):
         """Zapisuje aktualny stan macierzy alokacji do historii."""
@@ -56,13 +65,17 @@ class TransportationSolver:
             self.rows += 1
             self.allocation = np.zeros((self.rows, self.cols))
 
-    def calculate_total_cost(self):
-        return np.sum(self.allocation * self.costs)
+    def calculate_total_result(self):
+        """Oblicza wynik. Jeśli MAX, odwraca wynik z powrotem na dodatni."""
+        raw_result = np.sum(self.allocation * self.costs)
+        if self.goal == "MAX":
+            return -raw_result  # Zwracamy zysk jako liczbę dodatnią
+        return raw_result
 
-    # --- METODY ROZWIĄZYWANIA (Z LOGOWANIEM KROKÓW) ---
+    # --- METODY ROZWIĄZYWANIA ---
 
     def solve_nwcm(self):
-        self.history = []  # Reset historii dla nowej metody
+        self.history = []
         self.log_step("Start metody Kąta Północno-Zachodniego")
 
         supply = self.supply.copy()
@@ -102,19 +115,20 @@ class TransportationSolver:
             supply[r] -= quantity
             demand[c] -= quantity
 
-            self.log_step(f"LCM: Wybrano koszt {min_val}. Przydzielono {quantity} na trasie Dost{r + 1}->Odb{c + 1}")
+            val_display = min_val if self.goal == "MIN" else -min_val
+            type_display = "koszt" if self.goal == "MIN" else "zysk"
 
-            if supply[r] == 0:
-                costs_temp[r, :] = np.inf
-            if demand[c] == 0:
-                costs_temp[:, c] = np.inf
+            self.log_step(
+                f"LCM: Wybrano {type_display} {val_display}. Przydzielono {quantity} (Dost{r + 1}->Odb{c + 1})")
+
+            if supply[r] == 0: costs_temp[r, :] = np.inf
+            if demand[c] == 0: costs_temp[:, c] = np.inf
 
         return self.allocation
 
     def solve_row_min(self):
         self.history = []
         self.log_step("Start metody Minimum Wierszowego")
-
         supply = self.supply.copy()
         demand = self.demand.copy()
 
@@ -135,9 +149,7 @@ class TransportationSolver:
                 supply[r] -= quantity
                 demand[best_c] -= quantity
 
-                self.log_step(
-                    f"RowMin: Wiersz {r + 1}, min koszt {min_c_val}. Przydzielono {quantity} do Odb{best_c + 1}")
-
+                self.log_step(f"RowMin: Wiersz {r + 1}. Przydzielono {quantity} do Odb{best_c + 1}")
         return self.allocation
 
     def solve_vam(self):
@@ -152,7 +164,6 @@ class TransportationSolver:
         col_active = [True] * self.cols
 
         while np.sum(supply) > 0 and np.sum(demand) > 0:
-            # Obliczanie kar (kod identyczny jak wcześniej, pomijam dla czytelności komentarze)
             row_penalties = []
             for r in range(self.rows):
                 if not row_active[r]:
@@ -188,12 +199,12 @@ class TransportationSolver:
                 r = row_penalties.index(max_r_p)
                 c_cands = [c for c in range(self.cols) if col_active[c]]
                 c = min(c_cands, key=lambda x: costs[r, x])
-                desc = f"VAM: Max kara wiersza ({max_r_p}). Wybrano Dost{r + 1}."
+                desc = f"VAM: Max kara wiersza. Wybrano Dost{r + 1}."
             else:
                 c = col_penalties.index(max_c_p)
                 r_cands = [r for r in range(self.rows) if row_active[r]]
                 r = min(r_cands, key=lambda x: costs[x, c])
-                desc = f"VAM: Max kara kolumny ({max_c_p}). Wybrano Odb{c + 1}."
+                desc = f"VAM: Max kara kolumny. Wybrano Odb{c + 1}."
 
             qty = min(supply[r], demand[c])
             self.allocation[r, c] = qty
@@ -208,7 +219,6 @@ class TransportationSolver:
         return self.allocation
 
     def solve_optimal_modi(self):
-        # Uwaga: nie resetujemy historii, bo MODI jest kontynuacją metody startowej
         self.log_step("--- Rozpoczęcie optymalizacji MODI ---")
 
         for iter_num in range(100):
@@ -241,7 +251,7 @@ class TransportationSolver:
                             negatives.append((delta, r, c))
 
             if not negatives:
-                self.log_step("MODI: Brak ujemnych kosztów zredukowanych. Rozwiązanie optymalne.")
+                self.log_step("MODI: Brak możliwości poprawy. Rozwiązanie optymalne.")
                 break
 
             negatives.sort(key=lambda x: x[0])
@@ -257,15 +267,13 @@ class TransportationSolver:
 
             theta = min(minus_cells)
 
-            # Aktualizacja alokacji
             for i, (r_p, c_p) in enumerate(path):
                 if i % 2 == 0:
                     self.allocation[r_p, c_p] += theta
                 else:
                     self.allocation[r_p, c_p] -= theta
 
-            self.log_step(
-                f"MODI Iteracja {iter_num + 1}: Przesunięto {theta} jednostek wzdłuż cyklu (Delta={best_delta:.2f})")
+            self.log_step(f"MODI: Przesunięto {theta} jednostek wzdłuż cyklu.")
 
         return self.allocation
 
@@ -274,114 +282,82 @@ class TransportationSolver:
         while stack:
             path = stack.pop()
             curr_r, curr_c = path[-1]
-
             if len(path) >= 4:
                 if path[-2][1] == curr_c and curr_r == start_r: return path
                 if path[-2][0] == curr_r and curr_c == start_c: return path
 
             last_move_was_vertical = False
             if len(path) > 1:
-                if path[-1][0] != path[-2][0]:
-                    last_move_was_vertical = True
+                if path[-1][0] != path[-2][0]: last_move_was_vertical = True
 
             next_steps = []
             if len(path) == 1 or last_move_was_vertical:
                 for c in range(self.cols):
-                    if c != curr_c and self.allocation[curr_r, c] > 0:
-                        next_steps.append((curr_r, c))
+                    if c != curr_c and self.allocation[curr_r, c] > 0: next_steps.append((curr_r, c))
             else:
                 for r in range(self.rows):
-                    if r != curr_r and self.allocation[r, curr_c] > 0:
-                        next_steps.append((r, curr_c))
+                    if r != curr_r and self.allocation[r, curr_c] > 0: next_steps.append((r, curr_c))
 
             for step in next_steps:
-                if step not in path:
-                    stack.append(path + [step])
+                if step not in path: stack.append(path + [step])
         return None
 
 
 # =============================================================================
-# GUI - OKNO WIZUALIZACJI KROKÓW (NOWOŚĆ DLA OCENY 4/5)
+# GUI - WIZUALIZACJA
 # =============================================================================
 
 class StepViewer(tk.Toplevel):
     def __init__(self, parent, history, rows, cols):
         super().__init__(parent)
-        self.title("Rozwiązanie Krok po Kroku")
+        self.title("Kroki Rozwiązania")
         self.geometry("600x500")
-
         self.history = history
         self.rows = rows
         self.cols = cols
         self.current_step = 0
 
-        # Panel sterowania
-        control_frame = ttk.Frame(self)
-        control_frame.pack(side="top", fill="x", pady=10)
+        ctrl = ttk.Frame(self)
+        ctrl.pack(pady=10)
+        ttk.Button(ctrl, text="<<", command=self.go_start).pack(side="left")
+        ttk.Button(ctrl, text="<", command=self.go_prev).pack(side="left")
+        self.lbl = ttk.Label(ctrl, text="0/0")
+        self.lbl.pack(side="left", padx=10)
+        ttk.Button(ctrl, text=">", command=self.go_next).pack(side="left")
+        ttk.Button(ctrl, text=">>", command=self.go_end).pack(side="left")
 
-        ttk.Button(control_frame, text="<< Początek", command=self.go_start).pack(side="left", padx=5)
-        ttk.Button(control_frame, text="< Poprzedni", command=self.go_prev).pack(side="left", padx=5)
+        self.desc = ttk.Label(self, text="", foreground="blue")
+        self.desc.pack()
+        self.txt = tk.Text(self)
+        self.txt.pack(fill="both", expand=True)
+        self.show()
 
-        self.lbl_step = ttk.Label(control_frame, text="Krok 0 / 0", font=("Arial", 10, "bold"))
-        self.lbl_step.pack(side="left", padx=20)
+    def show(self):
+        d, alloc = self.history[self.current_step]
+        self.lbl.config(text=f"{self.current_step + 1}/{len(self.history)}")
+        self.desc.config(text=d)
 
-        ttk.Button(control_frame, text="Następny >", command=self.go_next).pack(side="left", padx=5)
-        ttk.Button(control_frame, text="Koniec >>", command=self.go_end).pack(side="left", padx=5)
-
-        # Opis kroku
-        self.lbl_desc = ttk.Label(self, text="", foreground="blue", wraplength=550)
-        self.lbl_desc.pack(pady=5)
-
-        # Widok tabeli
-        self.text_area = tk.Text(self, font=("Consolas", 10))
-        self.text_area.pack(fill="both", expand=True, padx=10, pady=10)
-
-        self.show_current_step()
-
-    def show_current_step(self):
-        desc, allocation = self.history[self.current_step]
-        self.lbl_step.config(text=f"Krok {self.current_step + 1} z {len(self.history)}")
-        self.lbl_desc.config(text=desc)
-
-        # Rysowanie tabeli tekstowej
-        txt = ""
+        t = ""
         headers = [""] + [f"Odb{j + 1}" for j in range(self.cols)]
-        col_width = 8
-        row_fmt = "{:<8}" + "".join([f"{{:^{col_width}}}" for _ in range(self.cols)])
-
-        txt += row_fmt.format(*headers) + "\n"
-        txt += "-" * (8 + self.cols * col_width) + "\n"
-
+        fmt = "{:<8}" + "".join([f"{{:^8}}" for _ in range(self.cols)])
+        t += fmt.format(*headers) + "\n" + "-" * 50 + "\n"
         for i in range(self.rows):
-            row_vals = []
-            for j in range(self.cols):
-                val = allocation[i, j]
-                if val > 0:
-                    row_vals.append(f"{val:g}")
-                else:
-                    row_vals.append(".")
-            txt += row_fmt.format(f"Dost{i + 1}", *row_vals) + "\n"
-
-        self.text_area.delete(1.0, tk.END)
-        self.text_area.insert(tk.END, txt)
+            vals = [f"{v:g}" if v > 0 else "." for v in alloc[i]]
+            t += fmt.format(f"Dst{i + 1}", *vals) + "\n"
+        self.txt.delete(1.0, tk.END)
+        self.txt.insert(tk.END, t)
 
     def go_prev(self):
-        if self.current_step > 0:
-            self.current_step -= 1
-            self.show_current_step()
+        if self.current_step > 0: self.current_step -= 1; self.show()
 
     def go_next(self):
-        if self.current_step < len(self.history) - 1:
-            self.current_step += 1
-            self.show_current_step()
+        if self.current_step < len(self.history) - 1: self.current_step += 1; self.show()
 
     def go_start(self):
-        self.current_step = 0
-        self.show_current_step()
+        self.current_step = 0; self.show()
 
     def go_end(self):
-        self.current_step = len(self.history) - 1
-        self.show_current_step()
+        self.current_step = len(self.history) - 1; self.show()
 
 
 # =============================================================================
@@ -391,214 +367,184 @@ class StepViewer(tk.Toplevel):
 class TransportationApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Zagadnienie Transportowe - Wersja Pełna (5.0)")
-        self.root.geometry("1000x800")
-        self.solver = None  # Przechowuje instancję solvera po obliczeniach
+        self.root.title("Zagadnienie Transportowe - MAX/MIN")
+        self.root.geometry("1100x600")  # Szersze okno dla lepszego układu
+        self.solver = None
 
-        # --- GÓRNY PASEK Z POMOCĄ ---
-        top_bar = ttk.Frame(root)
-        top_bar.pack(fill="x", padx=5, pady=5)
-        ttk.Button(top_bar, text="Instrukcja / Pomoc", command=self.show_help).pack(side="right")
+        # Pasek pomocy (Góra)
+        ttk.Button(root, text="Pomoc / Instrukcja", command=self.show_help).pack(anchor="e", padx=10, pady=5)
 
-        # 1. Panel Konfiguracyjny
-        config_frame = ttk.LabelFrame(root, text="1. Konfiguracja Macierzy")
-        config_frame.pack(fill="x", padx=10, pady=5)
+        # 1. Konfiguracja (Góra)
+        fr1 = ttk.LabelFrame(root, text="1. Konfiguracja")
+        fr1.pack(fill="x", padx=10)
+        ttk.Label(fr1, text="Dostawcy:").pack(side="left")
+        self.s_r = ttk.Spinbox(fr1, from_=2, to=10, width=5);
+        self.s_r.set(3);
+        self.s_r.pack(side="left")
+        ttk.Label(fr1, text="Odbiorcy:").pack(side="left")
+        self.s_c = ttk.Spinbox(fr1, from_=2, to=10, width=5);
+        self.s_c.set(3);
+        self.s_c.pack(side="left")
+        ttk.Button(fr1, text="Generuj Tabelę", command=self.create_grid).pack(side="left", padx=10)
 
-        ttk.Label(config_frame, text="Liczba Dostawców:").pack(side="left", padx=5)
-        self.spin_rows = ttk.Spinbox(config_frame, from_=2, to=10, width=5)
-        self.spin_rows.set(3)
-        self.spin_rows.pack(side="left", padx=5)
+        # 2. Metoda i CEL (Góra)
+        fr2 = ttk.LabelFrame(root, text="2. Metoda i Cel Optymalizacji")
+        fr2.pack(fill="x", padx=10, pady=5)
 
-        ttk.Label(config_frame, text="Liczba Odbiorców:").pack(side="left", padx=5)
-        self.spin_cols = ttk.Spinbox(config_frame, from_=2, to=10, width=5)
-        self.spin_cols.set(4)
-        self.spin_cols.pack(side="left", padx=5)
+        goal_frame = ttk.Frame(fr2)
+        goal_frame.pack(side="left", padx=10)
+        ttk.Label(goal_frame, text="Cel:").pack(anchor="w")
+        self.goal_var = tk.StringVar(value="MIN")
+        ttk.Radiobutton(goal_frame, text="Minimalizacja (Koszty)", value="MIN", variable=self.goal_var).pack(anchor="w")
+        ttk.Radiobutton(goal_frame, text="Maksymalizacja (Zyski)", value="MAX", variable=self.goal_var).pack(anchor="w")
 
-        ttk.Button(config_frame, text="Generuj Tabelę", command=self.create_grid).pack(side="left", padx=20)
+        ttk.Separator(fr2, orient="vertical").pack(side="left", fill="y", padx=10)
 
-        # 2. Panel Metod
-        method_frame = ttk.LabelFrame(root, text="2. Wybór Metody")
-        method_frame.pack(fill="x", padx=10, pady=5)
+        alg_frame = ttk.Frame(fr2)
+        alg_frame.pack(side="left")
+        self.m_var = tk.StringVar(value="VAM")
+        opts = [("Kąt Pn-Zach", "NWCM"), ("Min. Element", "LCM"), ("Min. Wierszowe", "ROW_MIN"), ("Vogel (VAM)", "VAM")]
+        for t, v in opts: ttk.Radiobutton(alg_frame, text=t, value=v, variable=self.m_var).pack(side="left", padx=5)
 
-        self.method_var = tk.StringVar(value="NWCM")
+        self.do_opt = tk.BooleanVar(value=True)
+        ttk.Checkbutton(fr2, text="Doptymalizuj (MODI)", variable=self.do_opt).pack(side="left", padx=10)
 
-        methods = [
-            ("Kąt Północno-Zachodni (NWCM)", "NWCM"),
-            ("Minimalny Element (LCM)", "LCM"),
-            ("Minimum Wierszowe", "ROW_MIN"),
-            ("Aproksymacja Vogela (VAM)", "VAM"),
-        ]
+        ttk.Button(fr2, text="ROZWIĄŻ", command=self.solve).pack(side="right", padx=10)
+        self.btn_steps = ttk.Button(fr2, text="Kroki", state="disabled", command=self.steps);
+        self.btn_steps.pack(side="right")
 
-        for text, val in methods:
-            ttk.Radiobutton(method_frame, text=text, variable=self.method_var, value=val).pack(side="left", padx=5)
+        # --- GŁÓWNA ZAWARTOŚĆ (Podział na LEWO i PRAWO) ---
+        main_content = ttk.Frame(root)
+        main_content.pack(fill="both", expand=True, padx=10, pady=5)
 
-        self.opt_var = tk.BooleanVar()
-        ttk.Checkbutton(method_frame, text="Doptymalizuj (MODI)", variable=self.opt_var).pack(side="left", padx=20)
+        # LEWA STRONA: Tabela Danych
+        left_frame = ttk.LabelFrame(main_content, text="3. Tabela Danych (Edycja)")
+        left_frame.pack(side="left", fill="both", expand=True)
 
-        # Przyciski akcji
-        action_frame = ttk.Frame(method_frame)
-        action_frame.pack(side="right", padx=10)
+        self.canv = tk.Canvas(left_frame)
+        self.canv.pack(side="left", fill="both", expand=True)
 
-        ttk.Button(action_frame, text="Oblicz (Wynik Końcowy)", command=self.solve).pack(side="left", padx=5)
-        self.btn_steps = ttk.Button(action_frame, text="Pokaż Kroki", command=self.open_steps, state="disabled")
-        self.btn_steps.pack(side="left", padx=5)
+        sb_y = ttk.Scrollbar(left_frame, orient="vertical", command=self.canv.yview)
+        sb_y.pack(side="right", fill="y")
 
-        # 3. Kontener na tabelę
-        self.grid_container = ttk.Frame(root)
-        self.grid_container.pack(fill="both", expand=True, padx=10, pady=5)
+        sb_x = ttk.Scrollbar(left_frame, orient="horizontal", command=self.canv.xview)
+        sb_x.pack(side="bottom", fill="x")
 
-        self.canvas = tk.Canvas(self.grid_container)
-        self.scrollbar_y = ttk.Scrollbar(self.grid_container, orient="vertical", command=self.canvas.yview)
-        self.scrollable_frame = ttk.Frame(self.canvas)
-        self.scrollable_frame.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
-        self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
-        self.canvas.configure(yscrollcommand=self.scrollbar_y.set)
-        self.canvas.pack(side="left", fill="both", expand=True)
-        self.scrollbar_y.pack(side="right", fill="y")
+        self.canv.config(yscrollcommand=sb_y.set, xscrollcommand=sb_x.set)
 
-        self.entries_cost = []
-        self.entries_supply = []
-        self.entries_demand = []
+        self.frame_grid = ttk.Frame(self.canv)
+        self.canv.create_window((0, 0), window=self.frame_grid, anchor="nw")
+        self.frame_grid.bind("<Configure>", lambda e: self.canv.config(scrollregion=self.canv.bbox("all")))
 
-        # 4. Panel Wyników
-        res_frame = ttk.LabelFrame(root, text="3. Wynik Końcowy")
-        res_frame.pack(fill="both", expand=True, padx=10, pady=10)
-        self.result_text = tk.Text(res_frame, height=10, font=("Consolas", 10))
-        self.result_text.pack(fill="both", expand=True, padx=5, pady=5)
+        # PRAWA STRONA: Wyniki
+        right_frame = ttk.LabelFrame(main_content, text="4. Wyniki")
+        right_frame.pack(side="right", fill="both", expand=True, padx=(10, 0))
+
+        self.res_txt = tk.Text(right_frame, width=40, font=("Consolas", 10))
+        self.res_txt.pack(fill="both", expand=True, padx=5, pady=5)
 
         self.create_grid()
 
     def show_help(self):
-        """Wyświetla okno z instrukcją (Wymóg na ocenę 5)."""
-        help_text = (
-            "INSTRUKCJA OBSŁUGI PROGRAMU\n\n"
-            "1. PRZEZNACZENIE:\n"
-            "Program służy do rozwiązywania Zagadnienia Transportowego (minimalizacja kosztów).\n\n"
-            "2. KROKI POSTĘPOWANIA:\n"
-            "   a) Ustal liczbę dostawców i odbiorców, kliknij 'Generuj Tabelę'.\n"
-            "   b) Wypełnij tabelę kosztami jednostkowymi (środek), podażą (prawa kolumna) i popytem (dolny wiersz).\n"
-            "   c) Wybierz metodę rozwiązania startowego (np. NWCM, VAM).\n"
-            "   d) (Opcjonalnie) Zaznacz 'Doptymalizuj (MODI)', aby znaleźć rozwiązanie optymalne.\n"
-            "   e) Kliknij 'Oblicz (Wynik Końcowy)'.\n\n"
-            "3. WIZUALIZACJA KROKÓW:\n"
-            "   Po obliczeniu wyniku, aktywuje się przycisk 'Pokaż Kroki'.\n"
-            "   Kliknij go, aby otworzyć okno, w którym możesz prześledzić cały proces alokacji towaru.\n\n"
-            "4. UWAGI:\n"
-            "   Program automatycznie bilansuje zadania (dodaje fikcyjnych dostawców/odbiorców)."
+        msg = (
+            "1. Wybierz 'Maksymalizacja' dla zadań z zyskami (wpisuj liczby dodatnie).\n"
+            "2. Wybierz 'Minimalizacja' dla zadań z kosztami.\n"
+            "3. Wpisz dane w tabelę po lewej.\n"
+            "4. Kliknij ROZWIĄŻ. Wynik pojawi się w oknie po PRAWEJ stronie."
         )
-        messagebox.showinfo("Pomoc", help_text)
+        messagebox.showinfo("Pomoc", msg)
 
     def create_grid(self):
-        for widget in self.scrollable_frame.winfo_children(): widget.destroy()
-        self.entries_cost = []
-        self.entries_supply = []
-        self.entries_demand = []
-        self.btn_steps.config(state="disabled")  # Reset przycisku kroków
-
+        for w in self.frame_grid.winfo_children(): w.destroy()
+        self.cost_ents = [];
+        self.supp_ents = [];
+        self.dem_ents = []
+        self.btn_steps.config(state="disabled")
         try:
-            r = int(self.spin_rows.get())
-            c = int(self.spin_cols.get())
-        except ValueError:
+            R, C = int(self.s_r.get()), int(self.s_c.get())
+        except:
             return
 
-        # Generowanie nagłówków i pól (kod identyczny jak wcześniej)
-        ttk.Label(self.scrollable_frame, text="Dost\\Odb").grid(row=0, column=0, padx=5, pady=5)
-        for j in range(c): ttk.Label(self.scrollable_frame, text=f"Odb {j + 1}", font=("Arial", 9, "bold")).grid(row=0,
-                                                                                                                 column=j + 1)
-        ttk.Label(self.scrollable_frame, text="PODAŻ", foreground="blue", font=("Arial", 9, "bold")).grid(row=0,
-                                                                                                          column=c + 1)
+        # Nagłówki
+        tk.Label(self.frame_grid, text="Dost/Odb").grid(row=0, column=0)
+        for j in range(C): tk.Label(self.frame_grid, text=f"Odb {j + 1}").grid(row=0, column=j + 1)
+        tk.Label(self.frame_grid, text="PODAŻ", fg="blue").grid(row=0, column=C + 1)
 
-        for i in range(r):
-            ttk.Label(self.scrollable_frame, text=f"Dost {i + 1}", font=("Arial", 9, "bold")).grid(row=i + 1, column=0,
-                                                                                                   padx=5)
-            row_entries = []
-            for j in range(c):
-                e = ttk.Entry(self.scrollable_frame, width=6, justify="center")
-                e.insert(0, str(np.random.randint(1, 20)))
+        for i in range(R):
+            tk.Label(self.frame_grid, text=f"Dost {i + 1}").grid(row=i + 1, column=0)
+            row = []
+            for j in range(C):
+                e = ttk.Entry(self.frame_grid, width=6, justify="center")
+                e.insert(0, "0")
                 e.grid(row=i + 1, column=j + 1, padx=2, pady=2)
-                row_entries.append(e)
-            self.entries_cost.append(row_entries)
-            s = ttk.Entry(self.scrollable_frame, width=8, justify="center", foreground="blue")
-            s.insert(0, str(np.random.randint(50, 100)))
-            s.grid(row=i + 1, column=c + 1, padx=5)
-            self.entries_supply.append(s)
+                row.append(e)
+            self.cost_ents.append(row)
+            s = tk.Entry(self.frame_grid, width=8, fg="blue");
+            s.insert(0, "0");
+            s.grid(row=i + 1, column=C + 1)
+            self.supp_ents.append(s)
 
-        ttk.Label(self.scrollable_frame, text="POPYT", foreground="green", font=("Arial", 9, "bold")).grid(row=r + 1,
-                                                                                                           column=0)
-        for j in range(c):
-            d = ttk.Entry(self.scrollable_frame, width=6, justify="center", foreground="green")
-            d.insert(0, str(np.random.randint(50, 100)))
-            d.grid(row=r + 1, column=j + 1, padx=2, pady=5)
-            self.entries_demand.append(d)
-
-    def get_data(self):
-        try:
-            costs = [[float(e.get()) for e in row] for row in self.entries_cost]
-            supply = [float(e.get()) for e in self.entries_supply]
-            demand = [float(e.get()) for e in self.entries_demand]
-            return costs, supply, demand
-        except ValueError:
-            messagebox.showerror("Błąd", "Wprowadź poprawne liczby.")
-            return None, None, None
+        tk.Label(self.frame_grid, text="POPYT", fg="green").grid(row=R + 1, column=0)
+        for j in range(C):
+            d = tk.Entry(self.frame_grid, width=6, fg="green");
+            d.insert(0, "0");
+            d.grid(row=R + 1, column=j + 1)
+            self.dem_ents.append(d)
 
     def solve(self):
-        costs, supply, demand = self.get_data()
-        if costs is None: return
-
         try:
-            self.solver = TransportationSolver(costs, supply, demand)
-            method = self.method_var.get()
+            C = [[float(e.get()) for e in r] for r in self.cost_ents]
+            S = [float(e.get()) for e in self.supp_ents]
+            D = [float(e.get()) for e in self.dem_ents]
+            goal = self.goal_var.get()
 
-            if method == "NWCM":
+            self.solver = TransportationSolver(C, S, D, goal)
+
+            m = self.m_var.get()
+            if m == "NWCM":
                 self.solver.solve_nwcm()
-            elif method == "LCM":
+            elif m == "LCM":
                 self.solver.solve_lcm()
-            elif method == "ROW_MIN":
+            elif m == "ROW_MIN":
                 self.solver.solve_row_min()
-            elif method == "VAM":
+            elif m == "VAM":
                 self.solver.solve_vam()
 
-            start_cost = self.solver.calculate_total_cost()
-            final_cost = start_cost
-            was_optimized = False
+            res_start = self.solver.calculate_total_result()
+            res_opt = res_start
+            opt_done = False
 
-            if self.opt_var.get():
+            if self.do_opt.get():
                 self.solver.solve_optimal_modi()
-                final_cost = self.solver.calculate_total_cost()
-                was_optimized = True
+                res_opt = self.solver.calculate_total_result()
+                opt_done = True
 
-            self.display_results(start_cost, final_cost, was_optimized)
-            self.btn_steps.config(state="normal")  # Aktywuj przycisk kroków
+            self.show_res(res_start, res_opt, opt_done, goal)
+            self.btn_steps.config(state="normal")
 
         except Exception as e:
             messagebox.showerror("Błąd", str(e))
 
-    def display_results(self, start_cost, final_cost, was_optimized):
-        txt = f"METODA: {self.method_var.get()}\n"
-        txt += f"Koszt początkowy: {start_cost:.2f}\n"
-        if was_optimized:
-            txt += f"Koszt optymalny (MODI): {final_cost:.2f}\n"
+    def show_res(self, s, o, done, goal):
+        lbl = "KOSZT" if goal == "MIN" else "ZYSK"
+        t = f"Cel: {goal} ({'Minimalizacja Kosztów' if goal == 'MIN' else 'Maksymalizacja Zysku'})\n"
+        t += f"Początkowy {lbl}: {s:.2f}\n"
+        if done: t += f"Optymalny {lbl} (MODI): {o:.2f}\n"
 
-        # Wyświetlenie końcowej tabeli w oknie głównym
-        txt += "\nTABELA KOŃCOWA:\n"
-        headers = [""] + [f"Odb{j + 1}" for j in range(self.solver.cols)]
-        col_width = 8
-        row_fmt = "{:<8}" + "".join([f"{{:^{col_width}}}" for _ in range(self.solver.cols)])
-        txt += row_fmt.format(*headers) + "\n"
-        txt += "-" * (8 + self.solver.cols * col_width) + "\n"
-
+        t += "\nPLAN PRZEWOZÓW:\n"
+        cols = self.solver.cols
+        head = [""] + [f"Odb{j + 1}" for j in range(cols)]
+        fmt = "{:<8}" + "".join(["{:^8}" for _ in range(cols)])
+        t += fmt.format(*head) + "\n"
         for i in range(self.solver.rows):
-            row_vals = [f"{v:g}" if v > 0 else "." for v in self.solver.allocation[i]]
-            txt += row_fmt.format(f"Dost{i + 1}", *row_vals) + "\n"
+            vals = [f"{v:g}" if v > 0 else "." for v in self.solver.allocation[i]]
+            t += fmt.format(f"Dst{i + 1}", *vals) + "\n"
 
-        self.result_text.delete(1.0, tk.END)
-        self.result_text.insert(tk.END, txt)
+        self.res_txt.delete(1.0, tk.END)
+        self.res_txt.insert(tk.END, t)
 
-    def open_steps(self):
-        if self.solver and self.solver.history:
-            StepViewer(self.root, self.solver.history, self.solver.rows, self.solver.cols)
-        else:
-            messagebox.showinfo("Info", "Brak kroków do wyświetlenia.")
+    def steps(self):
+        if self.solver: StepViewer(self.root, self.solver.history, self.solver.rows, self.solver.cols)
 
 
 if __name__ == "__main__":
