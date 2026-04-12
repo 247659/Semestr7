@@ -75,7 +75,7 @@ def voronoi_finite_polygons_2d(vor, radius=None):
     return new_regions, np.asarray(new_vertices)
 
 
-def voronoi_diagram(X, clusters):
+def voronoi_diagram(X, clusters, y):
     vor = Voronoi(X)
     fig, ax = plt.subplots(figsize=(8, 6))
     cmap = plt.cm.tab10
@@ -91,7 +91,10 @@ def voronoi_diagram(X, clusters):
                 edgecolor='gray', linewidth=1)
 
     # Rysujemy punkty
-    point_colors = [cmap(c % 10) for c in clusters]
+    if y is None:
+        point_colors = [cmap(c % 10) for c in clusters]
+    else:
+        point_colors = [cmap(c % 10) for c in y]
     ax.scatter(X[:, 0], X[:, 1], c=point_colors, edgecolor='black', zorder=3)
 
     # KLUCZOWY KROK: Ustawiamy sztywne ramy wykresu.
@@ -103,65 +106,137 @@ def voronoi_diagram(X, clusters):
 
     plt.show()
 
-def kmeans(X, k):
+def kmeans(X, k, y=None):
     kmeans = KMeans(n_clusters=k).fit(X)
     clusters = kmeans.labels_
-    voronoi_diagram(X, clusters)
+    voronoi_diagram(X, clusters, y)
     score = silhouette_score(X, clusters)
-    return score
+    return score, clusters
 
-def dbscan(X, eps, min_samples=1):
-    dbscan = DBSCAN(eps=eps, min_samples=min_samples).fit(X)
+def dbscan(X, eps, y=None):
+    dbscan = DBSCAN(eps=eps, min_samples=1).fit(X)
     clusters = dbscan.labels_
     unique = np.unique(clusters)
-    voronoi_diagram(X, clusters)
+    voronoi_diagram(X, clusters, y)
 
     if len(unique) > 1:
         score = silhouette_score(X, clusters)
     else:
         score = 0
 
-    return score, len(unique)
+    return score, len(unique), clusters
+
+def calculate_adjusted_rand(clusters, true_labels):
+    return adjusted_rand_score(true_labels, clusters)
+
+def calculate_homogeneity(clusters, true_labels):
+    return homogeneity_score(true_labels, clusters)
+
+def calculate_completeness(clusters, true_labels):
+    return completeness_score(true_labels, clusters)
+
+def experiment_1(X):
+    silhouette_score_kmeans = []
+    clusters_values = range(2, 10)
+    for k in clusters_values:
+        score, _ = kmeans(X, k)
+        silhouette_score_kmeans.append(score)
+        print(f"k={k}, silhouette={score}")
+
+    plt.plot(clusters_values, silhouette_score_kmeans, label='Silhouette score')
+    plt.xlabel("Liczba klastrów")
+    plt.ylabel("Silhouette score")
+    plt.legend()
+    plt.show()
+
+def experiment_2(X):
+    eps = np.linspace(0.01, 2.00, 9)
+    silhouette_score_dbscan = []
+    clusters_counts = []
+    for ep in eps:
+        score, clusters = dbscan(X, ep)
+        silhouette_score_dbscan.append(score)
+        clusters_counts.append(clusters)
+        print(f"eps={ep:.2f}, clusters={clusters}, score={score}")
+
+    plt.plot(eps, silhouette_score_dbscan, label='Silhouette score')
+
+    for i, eps in enumerate(eps):
+        plt.text(eps, silhouette_score_dbscan[i], str(clusters_counts[i]))
+
+    plt.xlabel("eps")
+    plt.ylabel("Silhouette score")
+
+    plt.legend()
+    plt.show()
+
+def experiment_3(X, y):
+    adjusted_rand_score_kmeans = []
+    homogeneity_score_kmeans = []
+    completeness_kmeans = []
+
+    clusters_values = range(2, 10)
+    for k in clusters_values:
+        _, clusters = kmeans(X, k, y)
+        adjusted_rand = calculate_adjusted_rand(clusters, y)
+        adjusted_rand_score_kmeans.append(adjusted_rand)
+        homogeneity_score = calculate_homogeneity(clusters, y)
+        homogeneity_score_kmeans.append(homogeneity_score)
+        completeness = calculate_completeness(clusters, y)
+        completeness_kmeans.append(completeness)
+        print(f"k={k} adjusted_rand: {adjusted_rand}, homogenity: {homogeneity_score}, completeness: {completeness}")
+
+    plt.plot(clusters_values, adjusted_rand_score_kmeans, label='Adjust rand')
+    plt.plot(clusters_values, homogeneity_score_kmeans, label='Homogenity')
+    plt.plot(clusters_values, completeness_kmeans, label='Completeness')
+    plt.xlabel("Liczba klastrów")
+    plt.legend()
+    plt.show()
+
+def experiment_4(X, y):
+    adjusted_rand_score_kmeans = []
+    homogeneity_score_kmeans = []
+    completeness_kmeans = []
+    eps = np.linspace(0.01, 2.00, 9)
+    clusters_counts = []
+
+    for ep in eps:
+        _, clusters_amount, clusters = dbscan(X, ep, y)
+        adjusted_rand = calculate_adjusted_rand(clusters, y)
+        adjusted_rand_score_kmeans.append(adjusted_rand)
+        homogeneity_score = calculate_homogeneity(clusters, y)
+        homogeneity_score_kmeans.append(homogeneity_score)
+        completeness = calculate_completeness(clusters, y)
+        completeness_kmeans.append(completeness)
+        clusters_counts.append(clusters_amount)
+        print(f"eps={ep} adjusted_rand: {adjusted_rand}, homogenity: {homogeneity_score}, completeness: {completeness}")
+
+    plt.plot(eps, adjusted_rand_score_kmeans, label='Adjust rand')
+    plt.plot(eps, homogeneity_score_kmeans, label='Homogenity')
+    plt.plot(eps, completeness_kmeans, label='Completeness')
+    for i, eps in enumerate(eps):
+        plt.text(eps, adjusted_rand_score_kmeans[i], str(clusters_counts[i]))
+
+    plt.xlabel("eps")
+    plt.ylabel("Silhouette score")
+
+    plt.legend()
+    plt.show()
 
 if __name__ == "__main__":
     for i in range (1, 4):
 
-        X, y = load(f"./3_{i}.csv")
+        X, y = load(f"./2_{i}.csv")
 
         X = StandardScaler().fit_transform(X)
 
-        # silhouette_score_kmeans = []
-        # clusters_values = range(2, 10)
-        # for k in clusters_values:
-        #     score = kmeans(X, k)
-        #     silhouette_score_kmeans.append(score)
-        #     print(f"k={k}, silhouette={score}")
-        #
-        # plt.plot(clusters_values, silhouette_score_kmeans, label='Silhouette score')
-        # plt.xlabel("Liczba klastrów")
-        # plt.ylabel("Silhouette score")
-        # plt.legend()
-        # plt.show()
+        # experiment_1(X)
+        # experiment_2(X)
+        # experiment_3(X, y.astype(int))
+        experiment_4(X, y.astype(int))
 
-        eps = np.linspace(0.01, 2.00, 9)
-        silhouette_score_dbscan = []
-        clusters_counts = []
-        for ep in eps:
-            score, clusters = dbscan(X, ep)
-            silhouette_score_dbscan.append(score)
-            clusters_counts.append(clusters)
-            print(f"eps={ep:.2f}, clusters={clusters}, score={score}")
 
-        plt.plot(eps, silhouette_score_dbscan, label='Silhouette score')
 
-        for i, eps in enumerate(eps):
-            plt.text(eps, silhouette_score_dbscan[i], str(clusters_counts[i]))
-
-        plt.xlabel("eps")
-        plt.ylabel("Silhouette score")
-
-        plt.legend()
-        plt.show()
 
 
 
