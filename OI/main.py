@@ -52,7 +52,7 @@ def voronoi_finite_polygons_2d(vor, radius=None):
 
             t = vor.points[p2] - vor.points[p1]
             t /= np.linalg.norm(t)
-            n = np.array([-t[1], t[0]])  # wektor normalny
+            n = np.array([-t[1], t[0]])
 
             midpoint = vor.points[[p1, p2]].mean(axis=0)
             direction = np.sign(np.dot(midpoint - center, n)) * n
