@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 from matplotlib import pyplot as plt
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.neural_network import MLPClassifier
@@ -52,19 +53,19 @@ def run_experiment_1(datasets):
         X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=0.8, test_size=0.2, random_state=42)
 
         # 1. SVM
-        # for kernel in ['linear', 'rbf']:
-        #     best_svm, best_acc, best_C = None, -1, None
-        #     for C in C_values:
-        #         svc = SVC(kernel=kernel, C=C)
-        #         svc.fit(X_train, y_train)
-        #         acc = accuracy_score(y_train, svc.predict(X_train))
-        #         if acc > best_acc:
-        #             best_acc, best_C, best_svm = acc, C, svc
-        #
-        #         plot_decision(svc, X_train, X_test, y_train, y_test,
-        #                       f"SVM ({kernel}) C={C}, acc={acc:.2f}, dane={dataset}")
-        #
-        #     print(f"Najlepszy SVM ({kernel}): C={best_C}, Train Acc={best_acc:.2f}")
+        for kernel in ['linear', 'rbf']:
+            best_svm, best_acc, best_C = None, -1, None
+            for C in C_values:
+                svc = SVC(kernel=kernel, C=C, random_state=42)
+                svc.fit(X_train, y_train)
+                acc = accuracy_score(y_train, svc.predict(X_train))
+                if acc > best_acc:
+                    best_acc, best_C, best_svm = acc, C, svc
+
+                plot_decision(svc, X_train, X_test, y_train, y_test,
+                              f"SVM ({kernel}) C={C}, acc={acc:.2f}, dane={dataset}")
+
+            print(f"Najlepszy SVM ({kernel}): C={best_C}, Train Acc={best_acc:.2f}")
 
         # 2. MLP
         for activation in ['identity', 'relu']:
@@ -79,7 +80,7 @@ def run_experiment_1(datasets):
                     best_acc, best_hidden, best_mlp = acc, size, mlp
 
                 plot_decision(mlp, X_train, X_test, y_train, y_test,
-                          f"MLP ({activation}) Layers={size}\nTrain Acc={acc:.2f}")
+                          f"MLP ({activation}) Layers={size} acc={acc:.2f}, dane={dataset}")
 
             print(f"Najlepszy MLP ({activation}): layers={best_hidden}, Train Acc={best_acc:.2f}")
 
@@ -134,7 +135,7 @@ def run_experiment_2_or_5(datasets, train_size, test_size, page5 = False):
             plot_decision(knn, X_train, X_test, y_train, y_test, f"K-NN Granica decyzyjna (K={k} {suffix})\n accuracy = {current_test_acc:.2f} ")
             plot_confusion(knn, X_test, y_test, f"K-NN Macierz pomyłek (K={k})")
 
-def run_experiment_3(datasets):
+def run_experiment_3_and_6(datasets, train_size, test_size):
     print("\n" + "=" * 40 + "\nEKSPERYMENT 3: SVM (Parametr C)\n" + "=" * 40)
     C_values = np.logspace(-1, 2, 15)  # 10 wartości od 0.01 do 100
 
@@ -142,12 +143,12 @@ def run_experiment_3(datasets):
         print(f"\n--- Zbiór: {dataset} ---")
         X, y = load(dataset)
         X = StandardScaler().fit_transform(X)
-        X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=0.8, test_size=0.2, random_state=42)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=train_size, test_size=test_size, random_state=42)
 
         train_acc, test_acc = [], []
 
         for C in C_values:
-            svc = SVC(kernel='rbf', C=C)  # Używamy elastycznego rbf
+            svc = SVC(kernel='rbf', C=C, random_state=42)  # Używamy elastycznego rbf
             svc.fit(X_train, y_train)
             train_acc.append(accuracy_score(y_train, svc.predict(X_train)))
             test_acc.append(accuracy_score(y_test, svc.predict(X_test)))
@@ -183,7 +184,7 @@ def run_experiment_3(datasets):
             plot_confusion(svc, X_test, y_test, f"SVM Macierz pomyłek (C={c:.2f}) dla {suffix}")
 
 
-def run_experiment_4(datasets):
+def run_experiment_4_and_7(datasets, train_size, test_size):
     print("\n" + "=" * 40 + "\nEKSPERYMENT 4: MLP (Liczba neuronów w warstwie ukrytej)\n" + "=" * 40)
 
     neurons_range = [5, 10, 20, 50, 75, 100]
@@ -192,7 +193,7 @@ def run_experiment_4(datasets):
         print(f"\n--- Zbiór: {dataset} ---")
         X, y = load(dataset)
         X = StandardScaler().fit_transform(X)
-        X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=0.8, test_size=0.2, random_state=42)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=train_size, test_size=test_size, random_state=42)
 
         train_acc, test_acc = [], []
 
@@ -247,12 +248,149 @@ def run_experiment_4(datasets):
             )
             plot_confusion(mlp, X_test, y_test, f"MLP Macierz pomyłek: {neurons} neuronów ({suffix})")
 
+def run_experiment_8(dataset = "2_3.csv"):
+    X, y = load(dataset)
+    X = StandardScaler().fit_transform(X)
+
+    # PARAMETRY DOSTOSUJ DO SWOICH WYNIKÓW Z POPRZEDNICH ZADAŃ!
+    neurons_count = 75
+    max_epochs = 100000  # Żeby kod nie działał w nieskończoność (dostosuj jeśli potrzeba)
+
+    # Dwa warianty wielkości zbioru treningowego
+    train_sizes = [0.8, 0.2]
+
+    for train_size in train_sizes:
+        print(f"\n>> WARIANT: Wielkość zbioru treningowego = {train_size}")
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, train_size=train_size, test_size=0.2, random_state=42
+        )
+
+        # -------------------------------------------------------------
+        # CZĘŚĆ A: Jeden pełny proces z wizualizacjami (random_state=42)
+        # -------------------------------------------------------------
+        print(f"Rysowanie wykresów i granic decyzyjnych (pojedynczy bieg)...")
+        mlp_single = MLPClassifier(
+            hidden_layer_sizes=(neurons_count,), activation='relu',
+            solver='sgd', random_state=42
+        )
+
+        classes = np.unique(y_train)
+        train_acc_history = []
+        test_acc_history = []
+        models_history = []
+        best_epoch_acc = -1
+        best_epoch_num = 0
+        best_model = None
+
+        for epoch in range(max_epochs):
+            # Uczymy tylko jedną epokę!
+            mlp_single.partial_fit(X_train, y_train, classes=classes)
+
+            # Obliczamy i zapisujemy wyniki
+            acc_train = accuracy_score(y_train, mlp_single.predict(X_train))
+            acc_test = accuracy_score(y_test, mlp_single.predict(X_test))
+
+            train_acc_history.append(acc_train)
+            test_acc_history.append(acc_test)
+
+            # Zapisanie epoki początkowej
+            if epoch == 0:
+                from copy import deepcopy
+                models_history.append(('Pierwsza epoka (1)', deepcopy(mlp_single)))
+
+            # Zapisanie najlepszej epoki
+            if acc_test > best_epoch_acc:
+                best_epoch_acc = acc_test
+                best_epoch_num = epoch
+                best_model = deepcopy(mlp_single)
+
+            # Zapisanie ostatniej epoki nastąpi po pętli
+
+        # Zapisanie najlepszego i ostatniego modelu
+        models_history.append((f'Najlepsza epoka ({best_epoch_num})', best_model))
+        models_history.append((f'Ostatnia epoka ({max_epochs - 1})', deepcopy(mlp_single)))
+
+        # WYKRES: Zmiana accuracy w trakcie epok
+        plt.figure(figsize=(8, 4))
+        plt.plot(range(max_epochs), train_acc_history, label='Accuracy Treningowe')
+        plt.plot(range(max_epochs), test_acc_history, label='Accuracy Testowe')
+        plt.xlabel('Numer Epoki')
+        plt.ylabel('Accuracy')
+        plt.title(f"Postęp nauki MLP (train_size={train_size})")
+        plt.legend()
+        plt.grid(True)
+        plt.show()
+
+        # WIZUALIZACJE: Granice decyzyjne dla kluczowych epok
+        for title, model in models_history:
+            current_test_acc = accuracy_score(y_test, model.predict(X_test))
+            plot_decision(
+                model, X_train, X_test, y_train, y_test,
+                f"MLP (train={train_size}) - {title}\n accuracy = {current_test_acc:.2f}"
+            )
+
+        # -------------------------------------------------------------
+        # CZĘŚĆ B: 10 niezależnych biegów z różnymi wagami (random_state)
+        # -------------------------------------------------------------
+        print(f"Uruchamianie 10 biegów z różnymi inicjalizacjami wag...")
+        results_table = []
+
+        for run_id in range(10):
+            # Używamy run_id jako ziarna losowości dla wag
+            mlp = MLPClassifier(
+                hidden_layer_sizes=(neurons_count,), activation='relu',
+                solver='sgd', random_state=run_id
+            )
+
+            best_acc_test = -1
+            best_ep_num = 0
+            first_ep_train, first_ep_test = 0, 0
+            last_ep_train, last_ep_test = 0, 0
+            best_ep_train = 0
+
+            for epoch in range(max_epochs):
+                mlp.partial_fit(X_train, y_train, classes=classes)
+                acc_tr = accuracy_score(y_train, mlp.predict(X_train))
+                acc_te = accuracy_score(y_test, mlp.predict(X_test))
+
+                if epoch == 0:
+                    first_ep_train, first_ep_test = acc_tr, acc_te
+
+                if acc_te > best_acc_test:
+                    best_acc_test = acc_te
+                    best_ep_num = epoch
+                    best_ep_train = acc_tr
+
+                if epoch == max_epochs - 1:
+                    last_ep_train, last_ep_test = acc_tr, acc_te
+
+            # Dodanie wiersza do wyników
+            results_table.append({
+                'Bieg (Seed)': run_id,
+                'Start (Train)': f"{first_ep_train:.2f}",
+                'Start (Test)': f"{first_ep_test:.2f}",
+                'Best (Epoka)': best_ep_num,
+                'Best (Train)': f"{best_ep_train:.2f}",
+                'Best (Test)': f"{best_acc_test:.2f}",
+                'Koniec (Train)': f"{last_ep_train:.2f}",
+                'Koniec (Test)': f"{last_ep_test:.2f}"
+            })
+
+        # Wyświetlenie tabeli za pomocą Pandas (ładny format w konsoli)
+        df_results = pd.DataFrame(results_table)
+        print(f"\nTABELA WYNIKÓW DLA train_size={train_size}:")
+        print(df_results.to_string(index=False))
+        print("\n" + "-" * 50)
+
 if __name__ == "__main__":
     datasets_all = ["2_1.csv", "2_2.csv", "2_3.csv"]
     datasets_subset = ["2_2.csv", "2_3.csv"]
 
     # run_experiment_1(datasets_all)
     # run_experiment_2_or_5(datasets_subset, 0.8, 0.2)
-    # run_experiment_3(datasets_subset)
-    # run_experiment_4(datasets_subset)
-    run_experiment_2_or_5(datasets_subset, 0.2, 0.2, True)
+    # run_experiment_3(datasets_subset, 0.8, 0.2)
+    # run_experiment_4_and_7(datasets_subset, 0.8, 0.2)
+    # run_experiment_2_or_5(datasets_subset, 0.2, 0.2, True)
+    # run_experiment_3_and_6(datasets_subset, 0.2, 0.2)
+    # run_experiment_4_and_7(datasets_subset, 0.2, 0.2)
+    run_experiment_8()
