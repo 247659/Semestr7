@@ -67,7 +67,6 @@ def run_experiment_1(datasets):
 
         for activation in ['identity', 'relu']:
             best_mlp, best_acc, best_hidden = None, -1, None
-            print(f"Trenowanie MLP ({activation})... to może potrwać.")
             for size in hidden_layer_sizes:
                 mlp = MLPClassifier(activation=activation, hidden_layer_sizes=size,
                                     max_iter=100000, tol=0, n_iter_no_change=100000, solver='sgd', random_state=42)
@@ -177,7 +176,6 @@ def run_experiment_4_and_7(datasets, train_size, test_size):
     neurons_range = [5, 10, 20, 50, 75, 100]
 
     for dataset in datasets:
-        print(f"\n--- Zbiór: {dataset} ---")
         X, y = load(dataset)
         X = StandardScaler().fit_transform(X)
         X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=train_size, test_size=test_size, random_state=42)
@@ -241,12 +239,10 @@ def run_experiment_8(dataset = "2_3.csv"):
     train_sizes = [0.8, 0.2]
 
     for train_size in train_sizes:
-        print(f"\n>> WARIANT: Wielkość zbioru treningowego = {train_size}")
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, train_size=train_size, test_size=0.2, random_state=42
         )
 
-        print(f"Rysowanie wykresów i granic decyzyjnych (pojedynczy bieg)...")
         mlp_single = MLPClassifier(
             hidden_layer_sizes=(neurons_count,), activation='relu',
             solver='sgd', random_state=42
@@ -298,7 +294,6 @@ def run_experiment_8(dataset = "2_3.csv"):
                 f"MLP (train={train_size}) - {title}\n accuracy = {current_test_acc:.2f}"
             )
 
-        print(f"Uruchamianie 10 biegów z różnymi inicjalizacjami wag...")
         results_table = []
 
         for run_id in range(10):
@@ -355,7 +350,6 @@ def run_experiment_real_data():
     results_table = []
 
     for name, data in datasets.items():
-        print(f"\nAnaliza zbioru: {name}")
         X, y = data.data, data.target
 
         X_scaled = StandardScaler().fit_transform(X)
