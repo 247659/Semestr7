@@ -10,6 +10,7 @@ from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score, ConfusionMatrixDisplay, precision_recall_fscore_support
 from sklearn.inspection import DecisionBoundaryDisplay
 from sklearn.metrics import confusion_matrix
+from copy import deepcopy
 
 def load(path):
     data = np.loadtxt(path, delimiter=';')
@@ -266,7 +267,6 @@ def run_experiment_8(dataset = "2_3.csv"):
             test_acc_history.append(acc_test)
 
             if epoch == 0:
-                from copy import deepcopy
                 models_history.append(('Pierwsza epoka (1)', deepcopy(mlp_single)))
 
             if acc_test > best_epoch_acc:
