@@ -1,6 +1,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.spatial import Voronoi
+from sklearn.inspection import DecisionBoundaryDisplay
+from matplotlib.lines import Line2D
 
 def voronoi_finite_polygons_2d(vor, radius=None):
     if vor.points.shape[1] != 2:
@@ -95,5 +97,80 @@ def voronoi_diagram(X, y, num_samples=500, title="Diagram Woronoja"):
 
     plt.title(title)
     plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.tight_layout()
+    plt.show()
+
+def plot_decision(model, X_train, X_test, y_train, y_test, title):
+
+    fig, ax = plt.subplots(figsize=(10, 8))
+
+    # =========================
+    # Granice decyzyjne
+    # =========================
+    DecisionBoundaryDisplay.from_estimator(
+        model,
+        X_train,
+        response_method="predict",
+        alpha=0.35,
+        ax=ax,
+        eps=0.5
+    )
+
+    # =========================
+    # Punkty treningowe
+    # =========================
+    scatter_train = ax.scatter(
+        X_train[:, 0],
+        X_train[:, 1],
+        c=y_train,
+        cmap="tab10",
+        edgecolor='k',
+        s=20
+    )
+
+    # =========================
+    # Punkty testowe
+    # =========================
+    ax.scatter(
+        X_test[:, 0],
+        X_test[:, 1],
+        c=y_test,
+        cmap="tab10",
+        marker='^',
+        # edgecolor='red',
+        s=25
+    )
+
+    # =========================
+    # LEGENDA CYFR
+    # =========================
+    colors = scatter_train.cmap(
+        np.linspace(0, 1, 10)
+    )
+
+    legend_elements = [
+        Line2D(
+            [0],
+            [0],
+            marker='o',
+            color='w',
+            label=f'Cyfra {i}',
+            markerfacecolor=colors[i],
+            markersize=10
+        )
+        for i in range(10)
+    ]
+
+    ax.legend(
+        handles=legend_elements,
+        title="Klasy",
+        bbox_to_anchor=(1.05, 1),
+        loc='upper left'
+    )
+
+    ax.set_title(title)
+    ax.set_xlabel("Suma pikseli")
+    ax.set_ylabel("Balans pikseli w pionie")
+
     plt.tight_layout()
     plt.show()
