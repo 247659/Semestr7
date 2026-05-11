@@ -9,8 +9,6 @@ from sklearn.metrics import confusion_matrix
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader
-
-# Importy z Twoich plików
 from dataset import NumpyDataset
 from model import MLP
 from train import train_model
@@ -18,9 +16,6 @@ from visualize import plot_decision
 
 
 def set_seed(seed=42):
-    """
-    Zamraża wszystkie źródła losowości, aby wyniki były w 100% odtwarzalne.
-    """
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -30,9 +25,6 @@ def set_seed(seed=42):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-# =====================================================================
-# WRAPPER DO RYSOWANIA GRANIC DECYZYJNYCH
-# =====================================================================
 class PyTorchSklearnWrapper(BaseEstimator, ClassifierMixin):
 
     def __init__(self, model):
@@ -40,7 +32,6 @@ class PyTorchSklearnWrapper(BaseEstimator, ClassifierMixin):
         self.classes_ = np.arange(10)
 
     def fit(self, X, y):
-        # sklearn oczekuje istnienia fit()
         return self
 
     def predict(self, X):
@@ -48,19 +39,12 @@ class PyTorchSklearnWrapper(BaseEstimator, ClassifierMixin):
         self.model.eval()
 
         with torch.no_grad():
-
             X_tensor = torch.tensor(X, dtype=torch.float32)
-
             outputs = self.model(X_tensor)
-
             predictions = torch.argmax(outputs, dim=1)
 
         return predictions.numpy()
 
-
-# =====================================================================
-# FUNKCJE POMOCNICZE
-# =====================================================================
 def evaluate_and_plot_cm(model, data_loader, dataset_name, subset_name):
     model.eval()
     all_preds, all_labels = [], []
@@ -84,7 +68,7 @@ def evaluate_and_plot_cm(model, data_loader, dataset_name, subset_name):
     plt.show()
 
 
-def prepare_dataloaders(X_train, y_train, X_test, y_test, batch_size=256):  # Zwiększony batch_size dla MNIST
+def prepare_dataloaders(X_train, y_train, X_test, y_test, batch_size=16):
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
@@ -99,10 +83,8 @@ def prepare_dataloaders(X_train, y_train, X_test, y_test, batch_size=256):  # Zw
 
 
 def run_optimal_model(name, X_train, y_train, X_test, y_test, num_classes, best_config, draw_boundaries=False):
-    print(f"\n{'=' * 60}")
     print(f"TRENOWANIE OPTYMALNEGO MODELU: {name}")
     print(f"Użyte hiperparametry: {best_config}")
-    print(f"{'=' * 60}")
     set_seed()
     train_loader, val_loader, test_loader, input_size, X_tr, y_tr, X_te_scaled = prepare_dataloaders(X_train, y_train,
                                                                                                      X_test, y_test)
@@ -112,18 +94,15 @@ def run_optimal_model(name, X_train, y_train, X_test, y_test, num_classes, best_
                 num_classes=num_classes,
                 use_relu=best_config['use_relu'])
 
-    trained_model = train_model(model, train_loader, val_loader, epochs=300, lr=best_config['lr'], patience=5)
+    trained_model = train_model(model, train_loader, val_loader, lr=0.01, patience=5)
 
     print("\n--- GENEROWANIE WYNIKÓW ---")
     evaluate_and_plot_cm(trained_model, train_loader, name, "Treningowy")
     evaluate_and_plot_cm(trained_model, test_loader, name, "Testowy")
 
-    # Rysowanie granic decyzyjnych, jeśli wymiarowość = 2
     if draw_boundaries and input_size == 2:
-        print(f"\nGenerowanie granic decyzyjnych dla: {name}...")
         wrapped_model = PyTorchSklearnWrapper(trained_model)
 
-        # Pobieramy próbkę danych, żeby wykres nie rysował się w nieskończoność
         num_samples = 300
         indices = np.random.choice(len(X_tr), num_samples, replace=False)
         plot_decision(
@@ -135,42 +114,29 @@ def run_optimal_model(name, X_train, y_train, X_test, y_test, num_classes, best_
             f"Granice decyzyjne - {name}"
         )
 
-
-# =====================================================================
-# GŁÓWNA FUNKCJA
-# =====================================================================
 def main():
-    # Wczytanie etykiet
-    try:
-        y_train = np.load("features/y_train.npy")
-        y_test = np.load("features/y_test.npy")
-    except FileNotFoundError:
-        print("[BŁĄD] Brak plików. Uruchom najpierw skrypt features.py!")
-        return
+    y_train = np.load("features/y_train.npy")
+    y_test = np.load("features/y_test.npy")
 
-    # 1. Metoda 1_1: 2 Cechy (Suma, Balans)
     X1_tr = np.load("features/X1_train.npy")
     X1_te = np.load("features/X1_test.npy")
-    cfg_1 = {'hidden_size': 8, 'lr': 0.01, 'use_relu': True}
+    cfg_1 = {'hidden_size': 8, 'use_relu': True}
     run_optimal_model("MNIST - 2 Cechy (Suma, Balans)", X1_tr, y_train, X1_te, y_test, 10, cfg_1, draw_boundaries=True)
 
-    # 2. Metoda 2_1: 2 Cechy (Pętle, Wariancja)
     X2_tr = np.load("features/X2_train.npy")
     X2_te = np.load("features/X2_test.npy")
-    cfg_2 = {'hidden_size': 16, 'lr': 0.01, 'use_relu': True}
+    cfg_2 = {'hidden_size': 16, 'use_relu': True}
     run_optimal_model("MNIST - 2 Cechy (Pętle, Wariancja)", X2_tr, y_train, X2_te, y_test, 10, cfg_2,
                       draw_boundaries=True)
 
-    # 3. Metoda 2_2: 6 Cech Intuicyjnych
     X3_tr = np.load("features/X3_train.npy")
     X3_te = np.load("features/X3_test.npy")
-    cfg_3 = {'hidden_size': 64, 'lr': 0.01, 'use_relu': True}
+    cfg_3 = {'hidden_size': 64, 'use_relu': True}
     run_optimal_model("MNIST - 6 Cech Intuicyjnych", X3_tr, y_train, X3_te, y_test, 10, cfg_3, draw_boundaries=False)
 
-    # 4. Metoda 1_2: 20 Cech (PCA)
     X_pca_tr = np.load("features/X_pca_train.npy")
     X_pca_te = np.load("features/X_pca_test.npy")
-    cfg_pca = {'hidden_size': 100, 'lr': 0.01, 'use_relu': True}
+    cfg_pca = {'hidden_size': 100, 'use_relu': True}
     run_optimal_model("MNIST - 20 Cech (PCA)", X_pca_tr, y_train, X_pca_te, y_test, 10, cfg_pca, draw_boundaries=False)
 
 
