@@ -224,22 +224,30 @@ def experiment5(X, y):
     experiment_4(X, y.astype(int), False)
 
 if __name__ == "__main__":
-    for i in range (1, 4):
+    # for i in range (1, 4):
+    #
+    #     X, y = load(f"./2_{i}.csv")
+    #     X = StandardScaler().fit_transform(X)
+    #
+    #     experiment_1(X, True)
+    #     experiment_2(X, True)
+    #     experiment_3(X, y.astype(int), True)
+    #     experiment_4(X, y.astype(int), True)
 
-        X, y = load(f"./2_{i}.csv")
-        X = StandardScaler().fit_transform(X)
+    iris = load_iris()
+    wine = load_wine()
 
-        experiment_1(X, True)
-        experiment_2(X, True)
-        experiment_3(X, y.astype(int), True)
-        experiment_4(X, y.astype(int), True)
+    # Standaryzacja Iris
+    X_iris = StandardScaler().fit_transform(iris.data)  # Skalowanie cech Iris
+    y_iris = iris.target
+    print("Wyniki dla zbioru IRIS (po standaryzacji):")
+    experiment5(X_iris, y_iris)
 
-    data = load_iris()
-    print(data.target_names)
-    experiment5(data.data, data.target)
-    data = load_wine()
-    print(data.target_names)
-    experiment5(data.data, data.target)
+    # Standaryzacja Wine
+    X_wine = StandardScaler().fit_transform(wine.data)  # Skalowanie cech Wine
+    y_wine = wine.target
+    print("\nWyniki dla zbioru WINE (po standaryzacji):")
+    experiment5(X_wine, y_wine)
 
 
 
