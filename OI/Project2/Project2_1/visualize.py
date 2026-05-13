@@ -65,31 +65,24 @@ def voronoi_diagram(X, y, num_samples=500, title="Diagram Woronoja"):
         X_sample = X
         y_sample = y
 
-        # 2. Wyliczenie Woronoja na próbce
     vor = Voronoi(X_sample)
     regions, vertices = voronoi_finite_polygons_2d(vor)
 
     fig, ax = plt.subplots(figsize=(10, 8))
 
-    # cmap(tab10) daje ładne, mocne 10 kolorów (idealnie dla cyfr 0-9)
     cmap = plt.cm.get_cmap('tab10', 10)
 
-    # 3. Rysowanie kolorowych obszarów (poligonów)
-    # W funkcji voronoi_finite_polygons_2d obszary (regions) są
-    # uporządkowane dokładnie tak samo jak punkty wejściowe (X_sample)
     for i, region in enumerate(regions):
         polygon = vertices[region]
-        color = cmap(y_sample[i])  # Kolor odpowiadający etykiecie punktu
+        color = cmap(y_sample[i])
         ax.fill(*zip(*polygon), alpha=0.3, color=color, edgecolor='black', linewidth=0.5)
 
-    # 4. Rysowanie punktów na wierzchu obszarów
     for class_id in np.unique(y_sample):
         idx = (y_sample == class_id)
         ax.scatter(X_sample[idx, 0], X_sample[idx, 1],
                    c=[cmap(class_id)], edgecolor='black', s=25,
                    zorder=3, label=f"Cyfra {class_id}")
 
-    # 5. Marginesy
     margin_x = (X_sample[:, 0].max() - X_sample[:, 0].min()) * 0.1
     margin_y = (X_sample[:, 1].max() - X_sample[:, 1].min()) * 0.1
     ax.set_xlim(X_sample[:, 0].min() - margin_x, X_sample[:, 0].max() + margin_x)
@@ -104,9 +97,6 @@ def plot_decision(model, X_train, X_test, y_train, y_test, title):
 
     fig, ax = plt.subplots(figsize=(10, 8))
 
-    # =========================
-    # Granice decyzyjne
-    # =========================
     DecisionBoundaryDisplay.from_estimator(
         model,
         X_train,
@@ -115,10 +105,6 @@ def plot_decision(model, X_train, X_test, y_train, y_test, title):
         ax=ax,
         eps=0.5
     )
-
-    # =========================
-    # Punkty treningowe
-    # =========================
     scatter_train = ax.scatter(
         X_train[:, 0],
         X_train[:, 1],
@@ -127,23 +113,14 @@ def plot_decision(model, X_train, X_test, y_train, y_test, title):
         edgecolor='k',
         s=20
     )
-
-    # =========================
-    # Punkty testowe
-    # =========================
     ax.scatter(
         X_test[:, 0],
         X_test[:, 1],
         c=y_test,
         cmap="tab10",
         marker='^',
-        # edgecolor='red',
         s=25
     )
-
-    # =========================
-    # LEGENDA CYFR
-    # =========================
     colors = scatter_train.cmap(
         np.linspace(0, 1, 10)
     )
