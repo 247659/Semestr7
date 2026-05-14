@@ -28,13 +28,9 @@ class CNN2FeaturesSecond(nn.Module):
         self.classifier = nn.Linear(2, 10)
 
     def forward(self, x):
-
         x = self.features(x)
-
         x = self.flatten(x)
-
         features = self.feature_layer(x)
-
         output = self.classifier(features)
 
         return output, features

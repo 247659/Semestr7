@@ -49,7 +49,7 @@ def show_confusion_matrix(
         display_labels=classes
     )
     plt.figure(figsize=(10, 10))
-    disp.plot(cmap="Blues")
+    disp.plot(cmap="Blues", xticks_rotation='vertical')
     plt.title(f"Confusion Matrix (Accuracy: {accuracy * 100:.2f}%)")
-
+    plt.tight_layout()
     plt.show()

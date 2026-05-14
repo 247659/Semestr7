@@ -48,7 +48,7 @@ def get_imagenette_loaders(
         batch_size=32):
 
     train_transform = transforms.Compose([
-        transforms.Resize((128, 128)),
+        transforms.Resize((160, 160)),
         transforms.ToTensor(),
         transforms.Normalize(
             (0.485, 0.456, 0.406),
@@ -57,7 +57,7 @@ def get_imagenette_loaders(
     ])
 
     test_transform = transforms.Compose([
-        transforms.Resize((128, 128)),
+        transforms.Resize((160, 160)),
         transforms.ToTensor(),
         transforms.Normalize(
             (0.485, 0.456, 0.406),

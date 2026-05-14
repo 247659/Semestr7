@@ -21,76 +21,6 @@ device = torch.device(
     "cuda" if torch.cuda.is_available() else "cpu"
 )
 
-# ============================================
-# LOADERS
-# ============================================
-
-# train_loader, test_loader = get_mnist_loaders()
-
-# ============================================
-# MODEL 1 - STANDARD CNN
-# ============================================
-
-# model = CNNClassifier(
-#     num_classes=10
-# ).to(device)
-#
-# train_acc, test_acc = train_model(
-#     model,
-#     train_loader,
-#     test_loader,
-#     "CNNFirst"
-# )
-#
-# plot_accuracy(
-#     train_acc,
-#     test_acc,
-#     "MNIST - CNN"
-# )
-#
-# show_confusion_matrix(
-#     model,
-#     test_loader,
-#     classes=[str(i) for i in range(10)],
-#     device=device
-# )
-
-# ============================================
-# MODEL 2 - 2 FEATURES
-# ============================================
-
-# model_2f = CNN2Features().to(device)
-
-# train_acc_2f, test_acc_2f = train_model(
-#     model_2f,
-#     train_loader,
-#     test_loader,
-#     "CNN2FeaturesFirst",
-#     feature_model=True
-# )
-#
-# plot_accuracy(
-#     train_acc_2f,
-#     test_acc_2f,
-#     "MNIST - CNN 2 Features"
-# )
-#
-# plot_decision_boundaries(
-#     model_2f,
-#     train_loader,
-#     test_loader,
-#     device,
-#     "Granice decyzyjne"
-# )
-#
-# show_confusion_matrix(
-#     model_2f,
-#     test_loader,
-#     classes=[str(i) for i in range(10)],
-#     device=device,
-#     feature_model=True
-# )
-
 def run_experiment1(train_loader, test_loader, model, name, title, feature_model=False, decision=False):
 
     train_acc_2f, test_acc_2f = train_model(
@@ -151,17 +81,17 @@ if __name__ == "__main__":
         train_loader,
         test_loader,
         model_cnn_second,
-        "CNN2FeaturesSecond",
+        "CNN2Second",
         "MNIST - CNN",
     )
 
-    model_2f_second = CNN2FeaturesSecond().to(device)
-    run_experiment1(
-        train_loader,
-        test_loader,
-        model_2f_second,
-        "CNN2FeaturesSecond",
-        "MNIST - CNN 2 Features",
-        feature_model=True,
-        decision=True
-    )
+    # model_2f_second = CNN2FeaturesSecond().to(device)
+    # run_experiment1(
+    #     train_loader,
+    #     test_loader,
+    #     model_2f_second,
+    #     "CNN2FeaturesSecond",
+    #     "MNIST - CNN 2 Features",
+    #     feature_model=True,
+    #     decision=True
+    # )

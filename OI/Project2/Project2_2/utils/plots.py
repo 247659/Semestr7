@@ -58,13 +58,12 @@ def extract_features(model, loader, device):
     return np.concatenate(features_list), np.concatenate(labels_list)
 
 
-def plot_decision_boundaries(model, train_loader, test_loader, device, title, max_points=500):
+def plot_decision_boundaries(model, train_loader, test_loader, device, title, max_points=500, class_names=None):
     """
     Tworzy wykres granic decyzyjnych z ograniczoną liczbą punktów dla czytelności.
     """
     X_train, y_train = extract_features(model, train_loader, device)
     X_test, y_test = extract_features(model, test_loader, device)
-    cmap = ListedColormap(plt.cm.tab10.colors)
 
     if len(X_train) > max_points:
         idx = np.random.choice(
@@ -213,23 +212,17 @@ def plot_decision_boundaries(model, train_loader, test_loader, device, title, ma
 
     colors = cmap.colors
 
+    if class_names is None:
+        class_names = [f'Cyfra {i}' for i in range(10)]
+
     class_elements = [
-
         Line2D(
-            [0],
-            [0],
-
-            marker='s',
-
-            color='w',
-
-            label=f'Cyfra {i}',
-
+            [0], [0],
+            marker='s', color='w',
+            label=class_names[i],
             markerfacecolor=colors[i],
-
             markersize=10
         )
-
         for i in range(10)
     ]
 
