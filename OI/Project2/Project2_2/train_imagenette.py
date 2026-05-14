@@ -1,6 +1,6 @@
 import torch
 
-from models.cnn_classifier_first import CNNClassifier
+from models_mnist.cnn_classifier_first import CNNClassifier
 
 from datasets.data_loaders import (
     get_imagenette_loaders

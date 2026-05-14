@@ -1,6 +1,6 @@
 import torchvision.transforms as transforms
 
-from torchvision.datasets import MNIST, ImageFolder
+from torchvision.datasets import MNIST, Imagenette
 from torch.utils.data import DataLoader
 
 
@@ -45,18 +45,14 @@ def get_mnist_loaders(batch_size=64):
 
 
 def get_imagenette_loaders(
-        train_path,
-        test_path,
         batch_size=32):
 
     train_transform = transforms.Compose([
         transforms.Resize((128, 128)),
-        transforms.RandomHorizontalFlip(),
-        transforms.RandomRotation(10),
         transforms.ToTensor(),
         transforms.Normalize(
-            (0.5, 0.5, 0.5),
-            (0.5, 0.5, 0.5)
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225)
         )
     ])
 
@@ -64,18 +60,22 @@ def get_imagenette_loaders(
         transforms.Resize((128, 128)),
         transforms.ToTensor(),
         transforms.Normalize(
-            (0.5, 0.5, 0.5),
-            (0.5, 0.5, 0.5)
+            (0.485, 0.456, 0.406),
+            (0.229, 0.224, 0.225)
         )
     ])
 
-    train_dataset = ImageFolder(
-        train_path,
+    train_dataset = Imagenette(
+        root="./data",
+        split="train",
+        download=True,
         transform=train_transform
     )
 
-    test_dataset = ImageFolder(
-        test_path,
+    test_dataset = Imagenette(
+        root="./data",
+        split="val",
+        download=True,
         transform=test_transform
     )
 

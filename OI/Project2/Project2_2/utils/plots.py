@@ -1,8 +1,8 @@
 import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
 from matplotlib.lines import Line2D
 import numpy as np
 import torch
-from sklearn.inspection import DecisionBoundaryDisplay
 
 
 def plot_accuracy(train_acc, test_acc, title):
@@ -24,17 +24,13 @@ def plot_accuracy(train_acc, test_acc, title):
 
 
 class PyTorchSklearnWrapper:
-    """Klasa udająca model scikit-learn, adaptująca klasyfikator z PyTorch."""
+    """Adapter pozwalający sklearn na korzystanie z modelu PyTorch."""
 
     def __init__(self, model, device):
         self.model = model
         self.device = device
-        self.classes_ = np.arange(10)  # sklearn wymaga zdefiniowania klas
-
-        # DODANO: Flaga informująca sklearn, że ten estymator to klasyfikator
+        self.classes_ = np.arange(10)
         self._estimator_type = "classifier"
-
-        # DODANO: Pusta metoda fit, której scikit-learn bezwzględnie wymaga do walidacji
 
     def fit(self, X, y=None):
         return self
@@ -42,89 +38,260 @@ class PyTorchSklearnWrapper:
     def predict(self, X):
         self.model.eval()
         with torch.no_grad():
-            # Konwersja wejścia numpy (N, 2) na tensor
             X_tensor = torch.tensor(X, dtype=torch.float32).to(self.device)
-            # Przepuszczenie wektora TYLKO przez końcowy klasyfikator Linear(2, 10)
             outputs = self.model.classifier(X_tensor)
             _, predicted = torch.max(outputs, 1)
         return predicted.cpu().numpy()
 
+
 def extract_features(model, loader, device):
-    """Pomocnicza funkcja zbierająca wszystkie cechy (X) i etykiety (y) z loadera."""
+    """Wyciąga cechy 2D i etykiety z modelu."""
     model.eval()
     features_list = []
     labels_list = []
-
     with torch.no_grad():
         for images, labels in loader:
             images = images.to(device)
             _, features = model(images)
             features_list.append(features.cpu().numpy())
             labels_list.append(labels.numpy())
-
     return np.concatenate(features_list), np.concatenate(labels_list)
 
-def plot_decision_boundaries(model, train_loader, test_loader, device, title):
-    """Zaktualizowana funkcja tworząca granice decyzyjne i plotująca punkty."""
 
-    print("Ekstrakcja cech dla wykresu (to może chwilę potrwać)...")
+def plot_decision_boundaries(model, train_loader, test_loader, device, title, max_points=500):
+    """
+    Tworzy wykres granic decyzyjnych z ograniczoną liczbą punktów dla czytelności.
+    """
     X_train, y_train = extract_features(model, train_loader, device)
     X_test, y_test = extract_features(model, test_loader, device)
+    cmap = ListedColormap(plt.cm.tab10.colors)
 
-    wrapped_model = PyTorchSklearnWrapper(model, device)
+    if len(X_train) > max_points:
+        idx = np.random.choice(
+            len(X_train),
+            max_points,
+            replace=False
+        )
 
-    fig, ax = plt.subplots(figsize=(10, 8))
+        X_train = X_train[idx]
+        y_train = y_train[idx]
+
+    if len(X_test) > max_points:
+        idx = np.random.choice(
+            len(X_test),
+            max_points,
+            replace=False
+        )
+
+        X_test = X_test[idx]
+        y_test = y_test[idx]
+
+    cmap = ListedColormap(
+        plt.cm.tab10.colors
+    )
+    X_all = np.vstack((X_train, X_test))
+
+    x_min = X_all[:, 0].min() - 5
+    x_max = X_all[:, 0].max() + 5
+
+    y_min = X_all[:, 1].min() - 5
+    y_max = X_all[:, 1].max() + 5
+
+    xx, yy = np.meshgrid(
+
+        np.linspace(x_min, x_max, 500),
+
+        np.linspace(y_min, y_max, 500)
+    )
+
+    # Punkty siatki
+    grid = np.c_[xx.ravel(), yy.ravel()]
 
     # =========================
-    # Granice decyzyjne (wykorzystujące adapter)
+    # PREDYKCJA KLAS
     # =========================
-    DecisionBoundaryDisplay.from_estimator(
-        wrapped_model,
-        X_train,  # Używamy punktów treningowych do określenia rozmiaru tła
-        response_method="predict",
-        alpha=0.35,
-        ax=ax,
-        eps=0.5,
-        cmap="tab10"  # Dodałem cmap, by tło pasowało kolorystycznie do kropek!
+
+    model.eval()
+
+    with torch.no_grad():
+
+        grid_tensor = torch.tensor(
+            grid,
+            dtype=torch.float32
+        ).to(device)
+
+        outputs = model.classifier(grid_tensor)
+
+        predictions = torch.argmax(
+            outputs,
+            dim=1
+        )
+
+    Z = predictions.cpu().numpy()
+
+    Z = Z.reshape(xx.shape)
+
+    # =========================
+    # RYSOWANIE
+    # =========================
+
+    fig, ax = plt.subplots(
+        figsize=(12, 9)
+    )
+
+    # Tło klas
+    ax.contourf(
+        xx,
+        yy,
+        Z,
+        alpha=0.25,
+        levels=np.arange(11) - 0.5,
+        cmap=cmap
+    )
+
+    # Linie granic
+    ax.contour(
+        xx,
+        yy,
+        Z,
+        colors='k',
+        linewidths=0.3,
+        alpha=0.4
     )
 
     # =========================
-    # Punkty treningowe
+    # PUNKTY TRENINGOWE
     # =========================
+
     scatter_train = ax.scatter(
-        X_train[:, 0], X_train[:, 1],
-        c=y_train, cmap="tab10", edgecolor='k', s=20
+
+        X_train[:, 0],
+        X_train[:, 1],
+
+        c=y_train,
+
+        cmap=cmap,
+
+        edgecolor='k',
+
+        s=30,
+
+        marker='o',
+
+        label='Train',
+
+        vmin=0,
+        vmax=9
     )
 
     # =========================
-    # Punkty testowe
+    # PUNKTY TESTOWE
     # =========================
+
     ax.scatter(
-        X_test[:, 0], X_test[:, 1],
-        c=y_test, cmap="tab10", marker='^', s=25
+
+        X_test[:, 0],
+        X_test[:, 1],
+
+        c=y_test,
+
+        cmap=cmap,
+
+        s=40,
+
+        marker='^',
+
+        label='Test',
+
+        vmin=0,
+        vmax=9
     )
 
     # =========================
-    # LEGENDA CYFR
+    # LEGENDA
     # =========================
-    colors = scatter_train.cmap(np.linspace(0, 1, 10))
 
-    legend_elements = [
-        Line2D([0], [0], marker='o', color='w', label=f'Cyfra {i}',
-               markerfacecolor=colors[i], markersize=10)
+    colors = cmap.colors
+
+    class_elements = [
+
+        Line2D(
+            [0],
+            [0],
+
+            marker='s',
+
+            color='w',
+
+            label=f'Cyfra {i}',
+
+            markerfacecolor=colors[i],
+
+            markersize=10
+        )
+
         for i in range(10)
     ]
 
-    ax.legend(handles=legend_elements, title="Klasy", bbox_to_anchor=(1.05, 1), loc='upper left')
+    shape_elements = [
+
+        Line2D(
+            [0],
+            [0],
+
+            marker='o',
+
+            color='w',
+
+            label='Zbiór treningowy',
+
+            markerfacecolor='gray',
+
+            markeredgecolor='k',
+
+            markersize=10
+        ),
+
+        Line2D(
+            [0],
+            [0],
+
+            marker='^',
+
+            color='w',
+
+            label='Zbiór testowy',
+
+            markerfacecolor='gray',
+
+            markersize=10
+        )
+    ]
+
+    ax.legend(
+
+        handles=
+        class_elements
+        + [Line2D([0], [0], color='w', label='')]
+        + shape_elements,
+
+        bbox_to_anchor=(1.05, 1),
+
+        loc='upper left'
+    )
+
+    # =========================
+    # OPISY
+    # =========================
 
     ax.set_title(title)
 
-    # UWAGA: W sieciach CNN cechy są automatyczne i abstrakcyjne.
-    # Etykiety "Suma pikseli" nie mają tu sensu fizycznego.
-    ax.set_xlabel("Wyuczona Cecha 1")
-    ax.set_ylabel("Wyuczona Cecha 2")
+    ax.set_xlabel("Cecha 1")
+
+    ax.set_ylabel("Cecha 2")
 
     plt.tight_layout()
+
     plt.show()
 
 
