@@ -6,4 +6,11 @@ best_model_ImagenetteCNN2Features.pth
 best_model_ImagenetteCNNFirst.pth
 best_model_ImagenetteCNNSecond.pth
 best_model_ImagenetteCNN2FeaturesSecond.pth
+best_model_temp_CNN2Features_aug_1_200_run9.pth
+best_model_temp_CNN2Features_no_aug_all_run5.pth
+best_model_temp_ImagenetteCNN_aug_1_all_run2.pth
+BEST_OVERALL_CNN2Features_MNIST.pth
+BEST_OVERALL_CNNClassifier_MNIST.pth
+BEST_OVERALL_ImagenetteCNN_IMAGENETTE.pth
 /data
+/datasets/data 
