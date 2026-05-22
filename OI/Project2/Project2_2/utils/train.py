@@ -4,16 +4,8 @@ import torch.optim as optim
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
-# ==========================================
-# KLASA EARLY STOPPING
-# ==========================================
 class EarlyStopping:
     def __init__(self, patience=5, min_delta=0.0):
-        """
-        patience (int): Ile epok czekać na poprawę, zanim przerwiemy trening.
-        min_delta (float): Minimalna zmiana traktowana jako poprawa.
-        """
         self.patience = patience
         self.min_delta = min_delta
         self.counter = 0
@@ -35,13 +27,8 @@ class EarlyStopping:
             self.counter = 0
 
     def save_checkpoint(self, model, path):
-        # Zapisujemy wagi modelu tylko wtedy, gdy wynik się poprawił
         torch.save(model.state_dict(), path)
 
-
-# ==========================================
-# ZMODYFIKOWANA PĘTLA TRENINGOWA
-# ==========================================
 def train_model(
         model,
         train_loader,
@@ -50,7 +37,7 @@ def train_model(
         epochs=200,
         lr=0.001,
         feature_model=False,
-        patience=5):  # Nowy parametr!
+        patience=5):
 
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
@@ -58,11 +45,9 @@ def train_model(
     train_acc_history = []
     test_acc_history = []
 
-    # Inicjalizacja Early Stopping
     early_stopping = EarlyStopping(patience=patience)
 
     for epoch in range(epochs):
-        # --- TRENING ---
         model.train()
         correct_train = 0
         total_train = 0
@@ -87,11 +72,10 @@ def train_model(
         train_acc = correct_train / total_train
         train_acc_history.append(train_acc)
 
-        # --- TESTOWANIE / WALIDACJA ---
         model.eval()
         correct_test = 0
         total_test = 0
-        test_loss = 0.0  # Dodajemy sumowanie lossa do Early Stopping
+        test_loss = 0.0
 
         with torch.no_grad():
             for images, labels in test_loader:
@@ -102,7 +86,6 @@ def train_model(
                 else:
                     outputs = model(images)
 
-                # Obliczanie straty na zbiorze testowym
                 loss = criterion(outputs, labels)
                 test_loss += loss.item() * images.size(0)
 
@@ -110,7 +93,6 @@ def train_model(
                 total_test += labels.size(0)
                 correct_test += (predicted == labels).sum().item()
 
-        # Średnia strata na całą epokę walidacyjną
         test_loss = test_loss / total_test
         test_acc = correct_test / total_test
         test_acc_history.append(test_acc)
@@ -119,7 +101,6 @@ def train_model(
         print(f"Train Accuracy: {train_acc:.4f}")
         print(f"Test Accuracy: {test_acc:.4f} | Test Loss: {test_loss:.4f}")
 
-        # --- SPRAWDZENIE EARLY STOPPING ---
         early_stopping(test_loss, model, path=f'best_model_{name}.pth')
 
         if early_stopping.early_stop:
@@ -128,7 +109,6 @@ def train_model(
 
         print("--------------------------------")
 
-    # Po zakończeniu treningu (lub przerwaniu) wczytujemy z powrotem NAJLEPSZE wagi
     model.load_state_dict(torch.load(f'best_model_{name}.pth'))
     print("Wczytano wagi z najlepszej epoki.")
 

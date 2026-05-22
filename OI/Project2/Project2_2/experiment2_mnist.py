@@ -15,11 +15,6 @@ device = torch.device(
     "cuda" if torch.cuda.is_available() else "cpu"
 )
 
-
-# ==========================================
-# AUGMENTACJE
-# ==========================================
-
 transform_no_aug = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize((0.1307,), (0.3081,))
@@ -39,7 +34,7 @@ transform_aug_2 = transforms.Compose([
         scale=(0.9, 1.1)
     ),
     transforms.ToTensor(),
-    transforms.Normalize((0.5,), (0.5,))
+    transforms.Normalize((0.1307,), (0.3081,))
 ])
 
 
@@ -104,10 +99,6 @@ for model_name, model_class in models_to_test.items():
 
         print(f"\nAUGMENTACJA: {aug_name}")
 
-        # ==========================================
-        # DATASET
-        # ==========================================
-
         train_dataset = MNIST(
             root="./data",
             train=True,
@@ -145,10 +136,6 @@ for model_name, model_class in models_to_test.items():
                 batch_size=64,
                 shuffle=False
             )
-
-            # ==========================================
-            # 10 TRENINGÓW
-            # ==========================================
 
             accuracies = []
 
@@ -188,15 +175,10 @@ for model_name, model_class in models_to_test.items():
                     best_overall_accuracy[model_name] = accuracy
                     best_model_filename = f"BEST_OVERALL_{model_name}_MNIST.pth"
                     torch.save(model.state_dict(), best_model_filename)
-                    print(f"🌟 UWAGA: Nowy rekord dla {model_name}! Zapisano model: {best_model_filename}")
 
-                    # Usuwamy plik tymczasowy po treningu, żeby nie zaśmiecać dysku 240 plikami
                 temp_file_path = f'best_model_{temp_model_name}.pth'
                 if os.path.exists(temp_file_path):
                     os.remove(temp_file_path)
-            # ==========================================
-            # ŚREDNIA I STD
-            # ==========================================
 
             mean_acc = np.mean(accuracies)
             std_acc = np.std(accuracies)
@@ -210,10 +192,6 @@ for model_name, model_class in models_to_test.items():
             print(f"Mean Accuracy: {mean_acc:.4f}")
             print(f"Std Accuracy: {std_acc:.4f}")
 
-
-# ==========================================
-# WYDRUK TABELI
-# ==========================================
 
 print("\n\n====================================")
 print("FINAL RESULTS")

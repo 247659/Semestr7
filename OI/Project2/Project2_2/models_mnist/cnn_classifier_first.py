@@ -32,7 +32,6 @@ class CNNClassifier(nn.Module):
 
 
     def forward(self, x):
-
         x = self.features(x)
         x = self.classifier(x)
 

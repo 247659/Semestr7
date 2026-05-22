@@ -30,16 +30,13 @@ indices = random.sample(range(len(dataset)), 2)
 for i, idx in enumerate(indices):
     img, label = dataset[idx]
 
-    # ORYGINAŁ
     axes[i, 0].imshow(img, cmap='gray')
     axes[i, 0].axis('off')
 
-    # AUG 1
     aug1 = augmentation_1(img)
     axes[i, 1].imshow(aug1.squeeze(), cmap='gray')
     axes[i, 1].axis('off')
 
-    # AUG 2
     aug2 = augmentation_2(img)
     axes[i, 2].imshow(aug2.squeeze(), cmap='gray')
     axes[i, 2].axis('off')

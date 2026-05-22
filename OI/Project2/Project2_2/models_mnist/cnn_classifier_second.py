@@ -7,14 +7,11 @@ class CNNClassifierSecond(nn.Module):
         super().__init__()
 
         self.features = nn.Sequential(
-
             nn.Conv2d(1, 32, kernel_size=5, padding=2),
             nn.ReLU(),
-
             nn.Conv2d(32, 64, kernel_size=5, padding=2),
             nn.ReLU(),
             nn.MaxPool2d(2),
-
             nn.Conv2d(64, 128, kernel_size=5, padding=2),
             nn.ReLU(),
             nn.MaxPool2d(2)
@@ -28,7 +25,6 @@ class CNNClassifierSecond(nn.Module):
         )
 
     def forward(self, x):
-
         x = self.features(x)
         x = self.classifier(x)
 

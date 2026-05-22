@@ -6,17 +6,12 @@ import torch
 
 
 def plot_accuracy(train_acc, test_acc, title):
-
     plt.figure(figsize=(8, 5))
-
     plt.plot(train_acc, label="Train Accuracy")
     plt.plot(test_acc, label="Test Accuracy")
-
     plt.xlabel("Epoch")
     plt.ylabel("Accuracy")
-
     plt.title(title)
-
     plt.legend()
     plt.grid()
 
@@ -24,8 +19,6 @@ def plot_accuracy(train_acc, test_acc, title):
 
 
 class PyTorchSklearnWrapper:
-    """Adapter pozwalający sklearn na korzystanie z modelu PyTorch."""
-
     def __init__(self, model, device):
         self.model = model
         self.device = device
@@ -45,7 +38,6 @@ class PyTorchSklearnWrapper:
 
 
 def extract_features(model, loader, device):
-    """Wyciąga cechy 2D i etykiety z modelu."""
     model.eval()
     features_list = []
     labels_list = []
@@ -59,9 +51,6 @@ def extract_features(model, loader, device):
 
 
 def plot_decision_boundaries(model, train_loader, test_loader, device, title, max_points=500, class_names=None):
-    """
-    Tworzy wykres granic decyzyjnych z ograniczoną liczbą punktów dla czytelności.
-    """
     X_train, y_train = extract_features(model, train_loader, device)
     X_test, y_test = extract_features(model, test_loader, device)
 
@@ -97,23 +86,15 @@ def plot_decision_boundaries(model, train_loader, test_loader, device, title, ma
     y_max = X_all[:, 1].max() + 5
 
     xx, yy = np.meshgrid(
-
         np.linspace(x_min, x_max, 500),
-
         np.linspace(y_min, y_max, 500)
     )
 
-    # Punkty siatki
     grid = np.c_[xx.ravel(), yy.ravel()]
-
-    # =========================
-    # PREDYKCJA KLAS
-    # =========================
 
     model.eval()
 
     with torch.no_grad():
-
         grid_tensor = torch.tensor(
             grid,
             dtype=torch.float32
@@ -127,18 +108,12 @@ def plot_decision_boundaries(model, train_loader, test_loader, device, title, ma
         )
 
     Z = predictions.cpu().numpy()
-
     Z = Z.reshape(xx.shape)
-
-    # =========================
-    # RYSOWANIE
-    # =========================
 
     fig, ax = plt.subplots(
         figsize=(12, 9)
     )
 
-    # Tło klas
     ax.contourf(
         xx,
         yy,
@@ -148,7 +123,6 @@ def plot_decision_boundaries(model, train_loader, test_loader, device, title, ma
         cmap=cmap
     )
 
-    # Linie granic
     ax.contour(
         xx,
         yy,
@@ -158,57 +132,31 @@ def plot_decision_boundaries(model, train_loader, test_loader, device, title, ma
         alpha=0.4
     )
 
-    # =========================
-    # PUNKTY TRENINGOWE
-    # =========================
-
     scatter_train = ax.scatter(
 
         X_train[:, 0],
         X_train[:, 1],
-
         c=y_train,
-
         cmap=cmap,
-
         edgecolor='k',
-
         s=30,
-
         marker='o',
-
         label='Train',
-
         vmin=0,
         vmax=9
     )
-
-    # =========================
-    # PUNKTY TESTOWE
-    # =========================
 
     ax.scatter(
-
         X_test[:, 0],
         X_test[:, 1],
-
         c=y_test,
-
         cmap=cmap,
-
         s=40,
-
         marker='^',
-
         label='Test',
-
         vmin=0,
         vmax=9
     )
-
-    # =========================
-    # LEGENDA
-    # =========================
 
     colors = cmap.colors
 
@@ -227,64 +175,41 @@ def plot_decision_boundaries(model, train_loader, test_loader, device, title, ma
     ]
 
     shape_elements = [
-
         Line2D(
             [0],
             [0],
-
             marker='o',
-
             color='w',
-
             label='Zbiór treningowy',
-
             markerfacecolor='gray',
-
             markeredgecolor='k',
-
             markersize=10
         ),
 
         Line2D(
             [0],
             [0],
-
             marker='^',
-
             color='w',
-
             label='Zbiór testowy',
-
             markerfacecolor='gray',
-
             markersize=10
         )
     ]
 
     ax.legend(
-
         handles=
         class_elements
         + [Line2D([0], [0], color='w', label='')]
         + shape_elements,
-
         bbox_to_anchor=(1.05, 1),
-
         loc='upper left'
     )
 
-    # =========================
-    # OPISY
-    # =========================
-
     ax.set_title(title)
-
     ax.set_xlabel("Cecha 1")
-
     ax.set_ylabel("Cecha 2")
-
     plt.tight_layout()
-
     plt.show()
 
 
