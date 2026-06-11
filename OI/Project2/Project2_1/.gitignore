@@ -1,3 +1,7 @@
 /data
 /features
 .venv
+best_model_iris.pth
+best_model_wine.pth
+best_model_mnist_2_features.pth
+best_model_mnist_flatten.pth

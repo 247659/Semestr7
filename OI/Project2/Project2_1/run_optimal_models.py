@@ -77,6 +77,14 @@ def run_optimal_model(name, X_train, y_train, X_test, y_test, num_classes, best_
                                 lr=0.01,
                                 patience=5)
 
+    dataset_name = name.lower().replace(" ", "_").replace("(", "").replace(")", "")
+    torch.save(
+        trained_model.state_dict(),
+        f"best_model_{dataset_name}.pth"
+    )
+
+    print(f"Zapisano model: best_model_{dataset_name}.pth")
+
     print("\n--- GENEROWANIE WYNIKÓW ---")
     evaluate_and_plot_cm(trained_model, train_loader, name, "Treningowy")
     evaluate_and_plot_cm(trained_model, test_loader, name, "Testowy")

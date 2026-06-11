@@ -12,5 +12,6 @@ best_model_temp_ImagenetteCNN_aug_1_all_run2.pth
 BEST_OVERALL_CNN2Features_MNIST.pth
 BEST_OVERALL_CNNClassifier_MNIST.pth
 BEST_OVERALL_ImagenetteCNN_IMAGENETTE.pth
+BEST_OVERALL_ImagenetteCNN2Features_IMAGENETTE_AUG1.pth
 /data
 /datasets/data 

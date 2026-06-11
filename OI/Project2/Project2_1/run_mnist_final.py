@@ -95,6 +95,11 @@ def run_optimal_model(name, X_train, y_train, X_test, y_test, num_classes, best_
                 use_relu=best_config['use_relu'])
 
     trained_model = train_model(model, train_loader, val_loader, lr=0.01, patience=5)
+    dataset_name = "mnist_2_features"
+    torch.save(
+        trained_model.state_dict(),
+        f"best_model_{dataset_name}.pth"
+    )
 
     print("\n--- GENEROWANIE WYNIKÓW ---")
     evaluate_and_plot_cm(trained_model, train_loader, name, "Treningowy")
@@ -118,10 +123,10 @@ def main():
     y_train = np.load("features/y_train.npy")
     y_test = np.load("features/y_test.npy")
 
-    X1_tr = np.load("features/X1_train.npy")
-    X1_te = np.load("features/X1_test.npy")
-    cfg_1 = {'hidden_size': 8, 'use_relu': True}
-    run_optimal_model("MNIST - 2 Cechy (Suma, Balans)", X1_tr, y_train, X1_te, y_test, 10, cfg_1, draw_boundaries=True)
+    # X1_tr = np.load("features/X1_train.npy")
+    # X1_te = np.load("features/X1_test.npy")
+    # cfg_1 = {'hidden_size': 8, 'use_relu': True}
+    # run_optimal_model("MNIST - 2 Cechy (Suma, Balans)", X1_tr, y_train, X1_te, y_test, 10, cfg_1, draw_boundaries=True)
 
     X2_tr = np.load("features/X2_train.npy")
     X2_te = np.load("features/X2_test.npy")
@@ -129,15 +134,15 @@ def main():
     run_optimal_model("MNIST - 2 Cechy (Pętle, Wariancja)", X2_tr, y_train, X2_te, y_test, 10, cfg_2,
                       draw_boundaries=True)
 
-    X3_tr = np.load("features/X3_train.npy")
-    X3_te = np.load("features/X3_test.npy")
-    cfg_3 = {'hidden_size': 64, 'use_relu': True}
-    run_optimal_model("MNIST - 6 Cech Intuicyjnych", X3_tr, y_train, X3_te, y_test, 10, cfg_3, draw_boundaries=False)
+    # X3_tr = np.load("features/X3_train.npy")
+    # X3_te = np.load("features/X3_test.npy")
+    # cfg_3 = {'hidden_size': 64, 'use_relu': True}
+    # run_optimal_model("MNIST - 6 Cech Intuicyjnych", X3_tr, y_train, X3_te, y_test, 10, cfg_3, draw_boundaries=False)
 
-    X_pca_tr = np.load("features/X_pca_train.npy")
-    X_pca_te = np.load("features/X_pca_test.npy")
-    cfg_pca = {'hidden_size': 100, 'use_relu': True}
-    run_optimal_model("MNIST - 20 Cech (PCA)", X_pca_tr, y_train, X_pca_te, y_test, 10, cfg_pca, draw_boundaries=False)
+    # X_pca_tr = np.load("features/X_pca_train.npy")
+    # X_pca_te = np.load("features/X_pca_test.npy")
+    # cfg_pca = {'hidden_size': 100, 'use_relu': True}
+    # run_optimal_model("MNIST - 20 Cech (PCA)", X_pca_tr, y_train, X_pca_te, y_test, 10, cfg_pca, draw_boundaries=False)
 
 
 if __name__ == "__main__":
