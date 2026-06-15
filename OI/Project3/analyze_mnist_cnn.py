@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
 from torch.utils.data import DataLoader
 from torchvision.datasets import MNIST
 from torchvision import transforms
@@ -123,29 +124,43 @@ def plot_image_attributions(input_tensor, saliency_attr, ig_attr, lime_attr, tru
         use_pyplot=False
     )
 
+    rwg_cmap = LinearSegmentedColormap.from_list("rwg", ["red", "white", "green"])
+
+    s_attr_pos = np.maximum(s_attr, 0)
+    i_attr_pos = np.maximum(i_attr, 0)
+
     # 2. Saliency
     viz.visualize_image_attr(
-        s_attr, original_image,
-        method="blended_heat_map", sign="absolute_value",
-        title="Saliency", cmap="PiYG",
+        s_attr_pos, original_image,  # Przekazujemy przefiltrowaną mapę (tylko dodatnie i zera)
+        method="heat_map",
+        sign="all",  # Wymuszamy symetryczną skalę, żeby 0.0 było na środku!
+        title="Saliency",
+        cmap=rwg_cmap,  # Nasza nowa mapa Czerwony-Biały-Zielony
+        show_colorbar=True,
         plt_fig_axis=(fig, axes[1]),
         use_pyplot=False
     )
 
     # 3. Integrated Gradients
     viz.visualize_image_attr(
-        i_attr, original_image,
-        method="blended_heat_map", sign="all",
-        title="Integrated Gradients", cmap="PiYG",
+        i_attr_pos, original_image,  # Przekazujemy przefiltrowaną mapę
+        method="heat_map",
+        sign="all",  # Symetryczna skala
+        title="Integrated Gradients",
+        cmap=rwg_cmap,
+        show_colorbar=True,
         plt_fig_axis=(fig, axes[2]),
         use_pyplot=False
     )
 
     # 4. LIME (SLIC)
     viz.visualize_image_attr(
-        l_attr, original_image,
-        method="blended_heat_map", sign="all",
-        title="LIME", cmap="PiYG",
+        l_attr, original_image,  # LIME zostawiamy bez zmian (chcemy widzieć czerwone)
+        method="heat_map",
+        sign="all",  # Symetryczna skala
+        title="LIME (SLIC)",
+        cmap=rwg_cmap,
+        show_colorbar=True,
         plt_fig_axis=(fig, axes[3]),
         use_pyplot=False
     )

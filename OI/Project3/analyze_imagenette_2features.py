@@ -70,9 +70,9 @@ except FileNotFoundError:
 # ==========================================
 # 4. ETAP 1: GLOBALNA OCENA DOKŁADNOŚCI
 # ==========================================
-print("\n=== ETAP 1: OCENA DOKŁADNOŚCI MODELU ===")
-acc = evaluate_model_accuracy(model, test_loader, device)
-print(f"Dokładność CNN na zbiorze walidacyjnym Imagenette: {acc:.2f}%\n")
+# print("\n=== ETAP 1: OCENA DOKŁADNOŚCI MODELU ===")
+# acc = evaluate_model_accuracy(model, test_loader, device)
+# print(f"Dokładność CNN na zbiorze walidacyjnym Imagenette: {acc:.2f}%\n")
 
 # ==========================================
 # 5. ETAP 2: LOKALNE OBJAŚNIANIE I WIZUALIZACJE
@@ -129,20 +129,22 @@ def plot_image_attributions(input_tensor, saliency_attr, ig_attr, lime_attr, tru
     )
 
     viz.visualize_image_attr(
-        s_attr, original_image, method="blended_heat_map", sign="absolute_value",
-        outlier_perc=2, title="Saliency", cmap="PiYG",
+        s_attr, original_image, method="masked_image", sign="positive",
+        outlier_perc=2, title="Saliency",
         plt_fig_axis=(fig, axes[1]), use_pyplot=False
     )
 
+    # 3. Integrated Gradients
     viz.visualize_image_attr(
-        i_attr, original_image, method="blended_heat_map", sign="all",
-        outlier_perc=2, title="Integrated Gradients", cmap="PiYG",
+        i_attr, original_image, method="masked_image", sign="positive",
+        outlier_perc=2, title="Integrated Gradients",
         plt_fig_axis=(fig, axes[2]), use_pyplot=False
     )
 
+    # 4. LIME (SLIC)
     viz.visualize_image_attr(
-        l_attr, original_image, method="blended_heat_map", sign="all",
-        outlier_perc=2, title="LIME (SLIC)", cmap="PiYG",
+        l_attr, original_image, method="masked_image", sign="positive",
+        outlier_perc=2, title="LIME (SLIC)",
         plt_fig_axis=(fig, axes[3]), use_pyplot=False
     )
 
@@ -151,7 +153,7 @@ def plot_image_attributions(input_tensor, saliency_attr, ig_attr, lime_attr, tru
 
 
 
-indices_to_analyze = [0, 689, 782]
+indices_to_analyze = [56, 66, 689, 782]
 
 for i in indices_to_analyze:
     input_tensor, true_label = test_dataset[i]
