@@ -14,6 +14,7 @@ Generuje pliki:
 """
 
 import os
+import re
 import json
 import math
 import time
@@ -109,11 +110,31 @@ class TMDBRawClient:
             tmdb_id = int(row["tmdb_id"])
             title = str(row["title"])
 
-            if m_id_str not in raw_cache or not raw_cache[m_id_str]:
-                if self.api_key or self.bearer_token:
-                    print(f"[TMDB API] Pobieranie surowych danych {idx + 1}/{total}: {title} (TMDB ID: {tmdb_id})")
-                    raw_json = self._fetch_raw_movie(tmdb_id)
-                else:
+            cached = raw_cache.get(m_id_str)
+            # Wpis zawierający tylko title/id nie jest pełnymi metadanymi TMDB.
+            useful_keys = {
+                "genres", "release_date", "original_language", "overview",
+                "production_companies", "production_countries", "runtime",
+                "credits", "keywords", "budget", "revenue", "vote_average",
+            }
+            cache_valid = (
+                isinstance(cached, dict)
+                and bool(useful_keys.intersection(cached.keys()))
+                and cached.get("id", tmdb_id) == tmdb_id
+            )
+            if not cache_valid:
+                if not (self.api_key or self.bearer_token):
+                    raise RuntimeError(
+                        f"Brak kompletnych danych TMDB w cache dla filmu {title!r} "
+                        f"(movie_id={m_id_str}, tmdb_id={tmdb_id}) i brak klucza API. "
+                        "Ustaw TMDB_API_KEY/TMDB_BEARER_TOKEN albo podaj --api-key/--bearer-token."
+                    )
+                print(f"[TMDB API] Pobieranie surowych danych {idx + 1}/{total}: {title} (TMDB ID: {tmdb_id})")
+                raw_json = self._fetch_raw_movie(tmdb_id)
+                if not isinstance(raw_json, dict) or not raw_json:
+                    # Zostawiamy jawne ostrzeżenie; fallback tytułu umożliwi dalsze działanie,
+                    # ale nie udajemy, że pełne metadane zostały pobrane.
+                    print(f"[OSTRZEŻENIE] Brak metadanych TMDB dla filmu {title!r}; zostanie użyty tytuł.")
                     raw_json = {"title": title, "id": tmdb_id}
                 raw_cache[m_id_str] = raw_json
                 updated = True
@@ -187,15 +208,18 @@ class RawFeatureProcessor:
                     features["set_genres"] = extracted
 
             elif key == "production_companies" and isinstance(val, list):
-                extracted = set()
+                companies = set()
+                company_countries = set()
                 for item in val:
                     if isinstance(item, dict):
                         if item.get("name"):
-                            extracted.add(str(item["name"]).strip().lower())
+                            companies.add(str(item["name"]).strip().lower())
                         if item.get("origin_country"):
-                            extracted.add(str(item["origin_country"]).strip().lower())
-                if extracted:
-                    features["set_production_companies"] = extracted
+                            company_countries.add(str(item["origin_country"]).strip().lower())
+                if companies:
+                    features["set_production_companies"] = companies
+                if company_countries:
+                    features["set_company_origin_countries"] = company_countries
 
             elif key == "production_countries" and isinstance(val, list):
                 extracted = {
@@ -484,38 +508,85 @@ def build_component_similarity_matrices(
 
 
 # ==============================================================================
-# 4. INDYWIDUALNY KLASYFIKATOR kNN Z SELEKCJĄ CECH (WRAPPER LOOCV)
+# 4. INDYWIDUALNY kNN + WRAPPER SFS (LOOCV BEZ PRZECIEKU)
 # ==============================================================================
 
-class UserKNNClassifier:
-    """
-    Osobny klasyfikator kNN dla pojedynczego użytkownika.
-    Ocena ustalana jest wyłącznie poprzez głosowanie odległościowe (Distance-Weighted Voting),
-    w którym każdy z k najbliższych sąsiadów oddaje głos o wadze proporcjonalnej
-    do bliskości (odwrotności odległości) na swoją klasę oceny {0, 1, 2, 3, 4, 5}.
-    """
+DEFAULT_K_CANDIDATES = (2, 3, 4, 5, 7, 9, 11, 15, 17)
+POWER_CANDIDATES = (1.0, 2.0)
 
-    SPARSE_BONUS_FEATURES = {"cat_belongs_to_collection"}
+
+def calculate_loss(y_true: np.ndarray, y_pred: np.ndarray, loss_name: str = "mae") -> float:
+    """Jedyna używana funkcja straty: MAE (średni błąd bezwzględny)."""
+    if loss_name != "mae":
+        raise ValueError("Ta wersja rozwiązania obsługuje wyłącznie loss='mae'.")
+    y_true = np.asarray(y_true, dtype=int)
+    y_pred = np.asarray(y_pred, dtype=int)
+    if len(y_true) == 0:
+        return float("inf")
+    return float(np.mean(np.abs(y_pred - y_true)))
+
+
+def rating_mode_without_current_label(y: np.ndarray) -> np.ndarray:
+    """LOOCV fallback: dominanta dla każdego wiersza liczona bez jego własnej etykiety."""
+    y = np.asarray(y, dtype=int)
+    total_counts = np.bincount(y, minlength=6)
+    fallbacks = np.empty(len(y), dtype=int)
+    for i, current_label in enumerate(y):
+        counts = total_counts.copy()
+        counts[current_label] -= 1
+        # Gdy po odłożeniu obserwacji nie ma żadnej oceny, stosujemy neutralne 3.
+        fallbacks[i] = int(np.argmax(counts)) if counts.sum() else 3
+    return fallbacks
+
+
+class UserKNNClassifier:
+    """Osobny kNN dla użytkownika; cechy oraz k/p dobierane wrapperem SFS i LOOCV."""
 
     def __init__(
         self,
         user_id: int,
-        k_candidates: Tuple[int, ...] = (2, 3, 4, 5, 7, 9, 11, 15, 17, 21),
+        k_candidates: Tuple[int, ...] = DEFAULT_K_CANDIDATES,
         max_selected_features: int = 8,
         eps: float = 1e-4,
+        aggregation: str = "weighted_mean",
+        loss_name: str = "mae",
     ):
-        self.user_id = user_id
-        self.k_candidates = k_candidates
-        self.max_selected_features = max_selected_features
-        self.eps = eps
+        if aggregation != "weighted_mean":
+            raise ValueError(f"Nieznana agregacja: {aggregation}")
+        if loss_name != "mae":
+            raise ValueError(f"Nieznana funkcja straty: {loss_name}")
+        self.user_id = int(user_id)
+        self.k_candidates = tuple(sorted({int(k) for k in k_candidates if int(k) >= 1})) or (1,)
+        self.max_selected_features = max(0, int(max_selected_features))
+        self.eps = float(eps)
+        self.aggregation = aggregation
+        self.loss_name = loss_name
 
-        self.train_indices: np.ndarray = np.array([], dtype=int)
-        self.train_ratings: np.ndarray = np.array([], dtype=int)
+        self.train_indices = np.array([], dtype=int)
+        self.train_ratings = np.array([], dtype=int)
         self.selected_features: List[str] = []
-        self.best_k: int = 7
-        self.best_power: float = 1.0
-        self.cv_loss: float = 0.0
-        self.user_mode_rating: int = 3
+        self.best_k = 1
+        self.best_power = 1.0
+        self.cv_loss = float("nan")
+        self.user_mode_rating = 3
+
+    def _aggregate_neighbors(
+        self,
+        neighbor_ratings: np.ndarray,
+        weights: np.ndarray,
+        fallback_ratings: np.ndarray,
+    ) -> np.ndarray:
+        """Agregacja weighted_mean: średnia ocen ważona podobieństwem sąsiadów."""
+        neighbor_ratings = np.asarray(neighbor_ratings, dtype=float)
+        weights = np.asarray(weights, dtype=float)
+        result = np.asarray(fallback_ratings, dtype=int).copy()
+        weight_sum = weights.sum(axis=1)
+        valid = weight_sum > 1e-12
+        if np.any(valid):
+            means = np.sum(neighbor_ratings[valid] * weights[valid], axis=1) / weight_sum[valid]
+            # Oceny wyjściowe są całkowite w zakresie 0..5; .5 zaokrąglamy w górę.
+            result[valid] = np.clip(np.floor(means + 0.5), 0, 5).astype(int)
+        return result
 
     def _predict_from_neighbors(
         self,
@@ -525,98 +596,60 @@ class UserKNNClassifier:
         power: float,
         fallback_rating: int,
     ) -> np.ndarray:
-        """
-        Klasyfikacja wyłącznie metodą głosowania odległościowego.
-        Waga sąsiada: w = (sim)^power / (1 - sim + eps).
-        """
+        """Predykcja z k najbliższych sąsiadów; fallback jest tylko dla braku wag."""
         n_queries, n_train = sim_matrix.shape
-        k_eff = min(k, n_train)
+        if n_queries == 0:
+            return np.array([], dtype=int)
+        if n_train == 0:
+            return np.full(n_queries, int(fallback_rating), dtype=int)
 
-        # Wybór k najbliższych sąsiadów
+        k_eff = min(max(1, int(k)), n_train)
         order = np.argsort(-sim_matrix, axis=1)[:, :k_eff]
-        top_sims = np.take_along_axis(sim_matrix, order, axis=1)
+        top_sims = np.clip(np.take_along_axis(sim_matrix, order, axis=1), 0.0, 1.0)
         top_ratings = train_ratings[order]
-
-        # Waga zależna od odległości: d = 1 - sim -> waga rośnie gwałtownie, gdy d dąży do 0
         distances = np.maximum(1.0 - top_sims, 0.0)
-        weights = np.power(np.maximum(top_sims, 0.0), power) / (distances + self.eps)
+        weights = np.power(top_sims, power) / (distances + self.eps)
+        fallback = np.full(n_queries, int(fallback_rating), dtype=int)
+        return self._aggregate_neighbors(top_ratings, weights, fallback)
 
-        preds = np.empty(n_queries, dtype=int)
-
-        for i in range(n_queries):
-            w_row = weights[i]
-            if np.sum(w_row) <= 1e-8:
-                preds[i] = fallback_rating
-                continue
-
-            # Tablica sumy głosów na każdą z 6 klas ocen {0, 1, 2, 3, 4, 5}
-            votes = np.zeros(6, dtype=float)
-            for r_val, w_val in zip(top_ratings[i], w_row):
-                votes[int(r_val)] += w_val
-
-            # Wybór oceny z największą sumą głosów ważonych odległością
-            preds[i] = int(np.argmax(votes))
-
-        return preds
-
-    def _evaluate_loocv(
-        self,
-        combined_sim_sub: np.ndarray,
-        y: np.ndarray,
-    ) -> Tuple[float, int, float]:
-        """
-        Ocena jakości podzbioru cech w procedurze LOOCV wyłącznie za pomocą
-        głosowania odległościowego. Dobiera optymalne parametry k oraz power.
-        """
-        S = combined_sim_sub.copy()
-        np.fill_diagonal(S, -1.0)
-
+    def _evaluate_loocv(self, combined_sim_sub: np.ndarray, y: np.ndarray) -> Tuple[float, int, float]:
+        """LOOCV dla konkretnego podzbioru cech; fallback nie używa odłożonej etykiety."""
+        y = np.asarray(y, dtype=int)
         n = len(y)
-        k_max = min(max(self.k_candidates), n - 1)
-        order = np.argsort(-S, axis=1)[:, :k_max]
-        sorted_sims = np.maximum(np.take_along_axis(S, order, axis=1), 0.0)
+        if n < 2:
+            return float("inf"), 1, 1.0
+
+        similarities = np.asarray(combined_sim_sub, dtype=float).copy()
+        np.fill_diagonal(similarities, -1.0)
+        valid_ks = [k for k in self.k_candidates if k < n]
+        if not valid_ks:
+            valid_ks = [1]
+        k_max = min(max(valid_ks), n - 1)
+        order = np.argsort(-similarities, axis=1)[:, :k_max]
+        sorted_sims = np.clip(np.take_along_axis(similarities, order, axis=1), 0.0, 1.0)
         sorted_y = y[order]
 
-        sorted_dist = np.maximum(1.0 - sorted_sims, 0.0)
-
+        # Kluczowa poprawka: dla i-tej obserwacji fallback jest dominantą y bez y[i].
+        fold_fallbacks = rating_mode_without_current_label(y)
         best_loss = float("inf")
-        best_k = self.k_candidates[0]
-        best_p = 1.0
+        best_k = valid_ks[0]
+        best_power = POWER_CANDIDATES[0]
 
-        for p in (1.0, 2.0):
-            # Obliczenie wag odległościowych dla wszystkich sąsiadów
-            w_all = np.power(sorted_sims, p) / (sorted_dist + self.eps)
-
-            for k in self.k_candidates:
-                if k >= n:
+        for power in POWER_CANDIDATES:
+            weights_all = np.power(sorted_sims, power) / (
+                np.maximum(1.0 - sorted_sims, 0.0) + self.eps
+            )
+            for k in valid_ks:
+                if k > weights_all.shape[1]:
                     continue
+                weights_k = weights_all[:, :k]
+                ratings_k = sorted_y[:, :k]
+                predictions = self._aggregate_neighbors(ratings_k, weights_k, fold_fallbacks)
+                loss = calculate_loss(y, predictions, self.loss_name)
+                if loss < best_loss - 1e-12:
+                    best_loss, best_k, best_power = loss, k, power
 
-                w_k = w_all[:, :k]
-                y_k = sorted_y[:, :k]
-
-                # Przeprowadzenie głosowania odległościowego dla wszystkich próbek LOOCV
-                pred_vote = np.empty(n, dtype=int)
-                for i in range(n):
-                    if np.sum(w_k[i]) <= 1e-8:
-                        pred_vote[i] = self.user_mode_rating
-                        continue
-
-                    votes = np.zeros(6, dtype=float)
-                    for r_val, w_val in zip(y_k[i], w_k[i]):
-                        votes[int(r_val)] += w_val
-                    pred_vote[i] = int(np.argmax(votes))
-
-                # Metryka błędu: kombinacja MAE i błędu klasyfikacji (0-1 loss)
-                mae = np.mean(np.abs(pred_vote - y))
-                zero_one = np.mean(pred_vote != y)
-                loss = 0.7 * mae + 0.3 * zero_one
-
-                if loss < best_loss:
-                    best_loss = loss
-                    best_k = k
-                    best_p = p
-
-        return best_loss, best_k, best_p
+        return best_loss, int(best_k), float(best_power)
 
     def fit(
         self,
@@ -624,81 +657,88 @@ class UserKNNClassifier:
         train_ratings: np.ndarray,
         sim_matrices: Dict[str, np.ndarray],
     ) -> "UserKNNClassifier":
-        """
-        Dopasowanie modelu użytkownika metodą Sequential Forward Selection (SFS)
-        sterowaną wyłącznie błędem głosowania odległościowego w LOOCV.
-        """
-        self.train_indices = train_movie_indices
-        self.train_ratings = train_ratings.astype(int)
+        """Dopasowanie modelu użytkownika z SFS; zachowuje najlepszy znaleziony subset."""
+        self.train_indices = np.asarray(train_movie_indices, dtype=int)
+        self.train_ratings = np.asarray(train_ratings, dtype=int)
+        if len(self.train_indices) != len(self.train_ratings):
+            raise ValueError("Liczba indeksów filmów nie zgadza się z liczbą ocen.")
+        if np.any((self.train_ratings < 0) | (self.train_ratings > 5)):
+            raise ValueError("Oceny treningowe muszą należeć do {0, 1, 2, 3, 4, 5}.")
 
-        # Jako ocenę domyślną (fallback) przyjmujemy dominantę ocen użytkownika
-        vals, counts = np.unique(self.train_ratings, return_counts=True)
-        self.user_mode_rating = int(vals[np.argmax(counts)])
+        if len(self.train_ratings):
+            vals, counts = np.unique(self.train_ratings, return_counts=True)
+            self.user_mode_rating = int(vals[np.argmax(counts)])
+        else:
+            self.user_mode_rating = 3
 
         n = len(self.train_indices)
-        candidate_features = list(sim_matrices.keys())
+        if n < 2:
+            self.selected_features = []
+            self.best_k = 1
+            self.best_power = 1.0
+            self.cv_loss = float("nan")
+            return self
+
+        if self.max_selected_features == 0 or not sim_matrices:
+            # Nawet bez cech oceniaj fallback w LOOCV, każdorazowo bez etykiety
+            # obserwacji walidacyjnej; nie raportuj błędu treningowego jako CV loss.
+            self.selected_features = []
+            self.cv_loss, self.best_k, self.best_power = self._evaluate_loocv(
+                np.zeros((n, n), dtype=float), self.train_ratings
+            )
+            return self
+
+        candidate_features = sorted(sim_matrices.keys())
         user_sub_matrices = {
-            f: sim_matrices[f][np.ix_(self.train_indices, self.train_indices)]
-            for f in candidate_features
+            feature: np.asarray(sim_matrices[feature])[np.ix_(self.train_indices, self.train_indices)]
+            for feature in candidate_features
         }
 
-        feature_coverage: Dict[str, float] = {}
-        for f, sub_mat in user_sub_matrices.items():
-            off_diag = sub_mat.copy()
-            np.fill_diagonal(off_diag, 0.0)
-            active_rows = np.sum(np.max(off_diag, axis=1) > 1e-5)
-            feature_coverage[f] = active_rows / max(1, n)
-
-        selected: List[str] = []
-        remaining: List[str] = list(candidate_features)
+        selected_path: List[str] = []
+        remaining = list(candidate_features)
         current_sum_sim = np.zeros((n, n), dtype=float)
 
-        best_selected = []
-        best_overall_loss = float("inf")
-        best_overall_k = 7
-        best_overall_p = 1.0
+        # Pusty subset to baseline LOOCV (predykcja fallbackiem liczonym bez danej etykiety).
+        best_loss, best_k, best_power = self._evaluate_loocv(current_sum_sim, self.train_ratings)
+        best_selected: List[str] = []
 
+        # Rozważamy wszystkie rozmiary subsetu do limitu. selected_path to ścieżka zachłanna;
+        # best_selected przechowuje osobno dokładnie tę wersję, dla której loss był najmniejszy.
         max_steps = min(self.max_selected_features, len(candidate_features))
-
-        for step in range(max_steps):
-            step_best_feat = None
+        for _step in range(max_steps):
+            step_best_feature = None
             step_best_loss = float("inf")
-            step_best_k = 7
-            step_best_p = 1.0
+            step_best_k = 1
+            step_best_power = 1.0
 
-            for feat in remaining:
-                if step == 0 and (
-                    feat in self.SPARSE_BONUS_FEATURES or feature_coverage[feat] < 0.25
-                ):
-                    continue
-
-                cand_sim = (current_sum_sim + user_sub_matrices[feat]) / (len(selected) + 1)
-                loss, k_opt, p_opt = self._evaluate_loocv(cand_sim, self.train_ratings)
-
-                if loss < step_best_loss:
+            for feature in remaining:
+                candidate_sim = (current_sum_sim + user_sub_matrices[feature]) / (len(selected_path) + 1)
+                loss, k_opt, power_opt = self._evaluate_loocv(candidate_sim, self.train_ratings)
+                if loss < step_best_loss - 1e-12:
+                    step_best_feature = feature
                     step_best_loss = loss
-                    step_best_feat = feat
                     step_best_k = k_opt
-                    step_best_p = p_opt
+                    step_best_power = power_opt
 
-            if step_best_feat is not None and (
-                step_best_loss <= best_overall_loss + 1e-6 or len(selected) < 2
-            ):
-                selected.append(step_best_feat)
-                remaining.remove(step_best_feat)
-                current_sum_sim += user_sub_matrices[step_best_feat]
-
-                if step_best_loss < best_overall_loss:
-                    best_overall_loss = step_best_loss
-                    best_overall_k = step_best_k
-                    best_overall_p = step_best_p
-            else:
+            if step_best_feature is None:
                 break
 
-        self.selected_features = selected
-        self.best_k = best_overall_k
-        self.best_power = best_overall_p
-        self.cv_loss = best_overall_loss
+            # Kontynuujemy ścieżkę SFS, by móc sprawdzić większe subsety; wynik końcowy
+            # jest jednak zawsze najlepszym subsetem, niekoniecznie ostatnim.
+            selected_path.append(step_best_feature)
+            remaining.remove(step_best_feature)
+            current_sum_sim += user_sub_matrices[step_best_feature]
+
+            if step_best_loss < best_loss - 1e-12:
+                best_loss = step_best_loss
+                best_k = step_best_k
+                best_power = step_best_power
+                best_selected = selected_path.copy()
+
+        self.selected_features = best_selected
+        self.best_k = int(best_k)
+        self.best_power = float(best_power)
+        self.cv_loss = float(best_loss)
         return self
 
     def predict(
@@ -706,15 +746,18 @@ class UserKNNClassifier:
         query_movie_indices: np.ndarray,
         sim_matrices: Dict[str, np.ndarray],
     ) -> np.ndarray:
-        """Predykcja ocen nowych filmów wyłącznie przez głosowanie odległościowe."""
+        query_movie_indices = np.asarray(query_movie_indices, dtype=int)
         n_queries = len(query_movie_indices)
         n_train = len(self.train_indices)
+        if n_queries == 0:
+            return np.array([], dtype=int)
+        if n_train == 0:
+            return np.full(n_queries, 3, dtype=int)
 
         combined_sim = np.zeros((n_queries, n_train), dtype=float)
-
         if self.selected_features:
-            for feat in self.selected_features:
-                combined_sim += sim_matrices[feat][np.ix_(query_movie_indices, self.train_indices)]
+            for feature in self.selected_features:
+                combined_sim += sim_matrices[feature][np.ix_(query_movie_indices, self.train_indices)]
             combined_sim /= len(self.selected_features)
 
         return self._predict_from_neighbors(
@@ -726,112 +769,108 @@ class UserKNNClassifier:
         )
 
 
-# ==============================================================================
-# 5. GŁÓWNY POTOK WYKONAWCZY (GENEROWANIE submission.csv ORAZ code.zip)
-# ==============================================================================
-
 def create_code_zip(zip_filename: str, files_to_include: List[str]) -> None:
-    """Tworzy archiwum code.zip zawierające kod źródłowy oraz zapisane surowe dane TMDB."""
+    """Tworzy archiwum z kodem i zasobami potrzebnymi do odtworzenia wyniku."""
+    readme = """# Movie-rating kNN solution\n\n\
+## Uruchomienie\n\
+1. Zainstaluj zależności z requirements.txt.\n\
+2. Ustaw TMDB_API_KEY lub TMDB_BEARER_TOKEN, jeśli cache TMDB nie zawiera wszystkich filmów.\n\
+3. Uruchom: python solution.py --movie-file movie.csv --train-file train.csv --task-file task.csv\n\
+Skrypt używa wyłącznie agregacji weighted_mean oraz funkcji straty MAE.\\
+Dobiera k, power i podzbiór cech za pomocą wewnętrznego LOOCV i dopasowuje osobny model kNN dla każdego użytkownika.\\
+Pliki wejściowe w tym archiwum są zasobami eksperymentu. Nie umieszczaj w archiwum kluczy API.\n"""
+    requirements = "numpy\npandas\nrequests\nscikit-learn\n"
     with zipfile.ZipFile(zip_filename, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        written = set()
         for filepath in files_to_include:
-            if os.path.exists(filepath):
-                zf.write(filepath, arcname=os.path.basename(filepath))
-    print(f"[INFO] Utworzono archiwum z kodem i surowymi zasobami: {zip_filename}")
+            if filepath and os.path.isfile(filepath):
+                arcname = os.path.basename(filepath)
+                if arcname not in written and arcname != os.path.basename(zip_filename):
+                    zf.write(filepath, arcname=arcname)
+                    written.add(arcname)
+        zf.writestr("README.md", readme)
+        zf.writestr("requirements.txt", requirements)
+    print(f"[INFO] Utworzono archiwum z kodem i zasobami: {zip_filename}")
 
 
-def evaluate_validation_accuracy(
-    train_df: pd.DataFrame,
-    movie_id_to_idx: Dict[int, int],
-    sim_matrices: Dict[str, np.ndarray],
-    n_splits: int = 5,
-    seed: int = 42,
-) -> None:
-    """
-    Przeprowadza walidację krzyżową (K-Fold CV) dla każdego użytkownika osobno.
-    Dla każdego foldu trenuje model (Filter + Wrapper SFS + dobór k) wyłącznie
-    na części treningowej i mierzy Accuracy na odłożonej części testowej.
-    """
-    rng = np.random.default_rng(seed)
-    all_true: List[int] = []
-    all_pred: List[int] = []
-    all_baseline_mode: List[int] = []
-
-    t0 = time.time()
-    print(f"\n[WALIDACJA] Uruchamianie {n_splits}-krotnej walidacji krzyżowej dla 358 użytkowników...")
-
-    for user_id, user_group in train_df.groupby("user_id"):
-        m_indices = np.array([movie_id_to_idx[int(m)] for m in user_group["movie_id"]], dtype=int)
-        ratings = user_group["rating"].to_numpy(dtype=int)
-
-        # Losowa permutacja 90 filmów użytkownika i podział na n_splits części
-        perm = rng.permutation(len(ratings))
-        folds = np.array_split(perm, n_splits)
-
-        for fold_idx in range(n_splits):
-            val_pos = folds[fold_idx]
-            train_pos = np.concatenate([folds[i] for i in range(n_splits) if i != fold_idx])
-
-            # Trening klasyfikatora tylko na części treningowej
-            clf = UserKNNClassifier(user_id=int(user_id))
-            clf.fit(m_indices[train_pos], ratings[train_pos], sim_matrices)
-
-            # Predykcja na niewidzianej części walidacyjnej
-            preds = clf.predict(m_indices[val_pos], sim_matrices)
-
-            # Dominanta z części treningowej jako punkt odniesienia (baseline)
-            vals, counts = np.unique(ratings[train_pos], return_counts=True)
-            mode_val = int(vals[np.argmax(counts)])
-
-            all_true.extend(ratings[val_pos].tolist())
-            all_pred.extend(preds.tolist())
-            all_baseline_mode.extend([mode_val] * len(val_pos))
-
-    y_true = np.array(all_true, dtype=int)
-    y_pred = np.array(all_pred, dtype=int)
-    y_base = np.array(all_baseline_mode, dtype=int)
-
-    acc_exact = np.mean(y_pred == y_true)
-    acc_base = np.mean(y_base == y_true)
-    acc_within_1 = np.mean(np.abs(y_pred - y_true) <= 1)
-    mae = np.mean(np.abs(y_pred - y_true))
-
-    print("=" * 65)
-    print(f"WYNIKI WALIDACJI KRZYŻOWEJ ({n_splits}-Fold CV, łącznie {len(y_true)} ocen):")
-    print(f" -> Accuracy dokładne (y_pred == y_true): {acc_exact * 100:.2f}% (Baseline mody: {acc_base * 100:.2f}%)")
-    print(f" -> Accuracy +/- 1 gwiazdka (|err| <= 1): {acc_within_1 * 100:.2f}%")
-    print(f" -> Średni błąd bezwzględny (MAE):        {mae:.4f}")
-    print(f" -> Czas walidacji:                       {time.time() - t0:.2f} s")
-    print("=" * 65 + "\n")
-
-
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Predykcja ocen filmów metodą kNN (zapis surowych danych TMDB + przetwarzanie w pamięci)."
+        description="Predykcja ocen filmów kNN z agregacją weighted_mean i funkcją straty MAE."
     )
-    parser.add_argument("--movie-file", default="movie.csv", help="Ścieżka do pliku movie.csv")
-    parser.add_argument("--train-file", default="train.csv", help="Ścieżka do pliku train.csv")
-    parser.add_argument("--task-file", default="task.csv", help="Ścieżka do pliku task.csv")
+    parser.add_argument("--movie-file", default="movie.csv", help="Ścieżka do movie.csv (separator ;, bez nagłówka)")
+    parser.add_argument("--train-file", default="train.csv", help="Ścieżka do train.csv (separator ;, bez nagłówka)")
+    parser.add_argument("--task-file", default="task.csv", help="Ścieżka do task.csv (separator ;, bez nagłówka)")
     parser.add_argument("--submission-file", default="submission.csv", help="Wyjściowy plik submission.csv")
-    parser.add_argument("--cache-file", default="tmdb_raw.json", help="Plik JSON z surowymi odpowiedziami TMDB")
+    parser.add_argument("--cache-file", default="tmdb_raw.json", help="Cache surowych danych TMDB")
     parser.add_argument("--zip-file", default="code.zip", help="Wyjściowe archiwum code.zip")
-    parser.add_argument("--api-key", default=None, help="Klucz API v3 do bazy TMDB")
-    parser.add_argument("--bearer-token", default=None, help="Token Bearer API v4 do bazy TMDB")
+    parser.add_argument("--api-key", default=None, help="Klucz API v3 TMDB")
+    parser.add_argument("--bearer-token", default=None, help="Token Bearer API v4 TMDB")
+    parser.add_argument("--max-selected-features", type=int, default=8, help="Maksymalna liczba cech w SFS")
     args = parser.parse_args()
+    if args.max_selected_features < 0:
+        parser.error("--max-selected-features musi być >= 0")
 
     movies_df = pd.read_csv(
-        args.movie_file, sep=";", header=None, names=["movie_id", "tmdb_id", "title"]
+        args.movie_file, sep=";", header=None, names=["movie_id", "tmdb_id", "title"],
+        dtype={"movie_id": "Int64", "tmdb_id": "Int64"},
     )
     train_df = pd.read_csv(
-        args.train_file, sep=";", header=None, names=["id", "user_id", "movie_id", "rating"]
+        args.train_file, sep=";", header=None, names=["id", "user_id", "movie_id", "rating"],
+        na_values=["NULL", "null", ""],
     )
     task_df = pd.read_csv(
         args.task_file, sep=";", header=None, names=["id", "user_id", "movie_id", "rating"],
-        na_values=["NULL"]
+        na_values=["NULL", "null", ""],
     )
 
+    required_movie_cols = ["movie_id", "tmdb_id", "title"]
+    if movies_df[required_movie_cols].isna().any().any():
+        raise ValueError("movie.csv zawiera brakujące movie_id, tmdb_id lub title.")
+    if movies_df["movie_id"].duplicated().any():
+        duplicates = movies_df.loc[movies_df["movie_id"].duplicated(), "movie_id"].tolist()[:10]
+        raise ValueError(f"movie.csv zawiera powtórzone movie_id, np. {duplicates}")
+    if train_df[["id", "user_id", "movie_id", "rating"]].isna().any().any():
+        raise ValueError("train.csv zawiera brakujące wartości.")
+    if task_df[["id", "user_id", "movie_id"]].isna().any().any():
+        raise ValueError("task.csv zawiera brakujące id, user_id lub movie_id.")
+    if task_df["id"].duplicated().any():
+        raise ValueError("id wiersza w task.csv musi być unikalne.")
+
+    movies_df["movie_id"] = movies_df["movie_id"].astype(int)
+    movies_df["tmdb_id"] = movies_df["tmdb_id"].astype(int)
+    for frame in (train_df, task_df):
+        for col in ("id", "user_id", "movie_id"):
+            frame[col] = frame[col].astype(int)
+
+    train_df["rating"] = pd.to_numeric(train_df["rating"], errors="raise")
+    if not np.all(np.isfinite(train_df["rating"].to_numpy(dtype=float))):
+        raise ValueError("train.csv zawiera niepoprawne oceny.")
+    if np.any(train_df["rating"].to_numpy(dtype=float) != np.floor(train_df["rating"].to_numpy(dtype=float))):
+        raise ValueError("Oceny w train.csv muszą być liczbami całkowitymi.")
+    train_df["rating"] = train_df["rating"].astype(int)
+    if not train_df["rating"].between(0, 5).all():
+        raise ValueError("Oceny w train.csv muszą należeć do {0, 1, 2, 3, 4, 5}.")
+
+    known_task_ratings = task_df["rating"].notna()
+    if known_task_ratings.any():
+        known = pd.to_numeric(task_df.loc[known_task_ratings, "rating"], errors="raise")
+        if not np.all(np.isfinite(known.to_numpy(dtype=float))) or not np.all(known == np.floor(known)):
+            raise ValueError("Niepuste oceny w task.csv muszą być skończonymi liczbami całkowitymi.")
+        if not known.between(0, 5).all():
+            raise ValueError("Niepuste oceny w task.csv muszą należeć do {0, 1, 2, 3, 4, 5}.")
+        task_df.loc[known_task_ratings, "rating"] = known.astype(int)
+
+    known_movie_ids = set(movies_df["movie_id"].tolist())
+    referenced_ids = set(train_df["movie_id"].tolist()) | set(task_df["movie_id"].tolist())
+    missing_movies = sorted(referenced_ids - known_movie_ids)
+    if missing_movies:
+        raise ValueError(f"movie_id z train/task nie występują w movie.csv, np. {missing_movies[:10]}")
+
+    missing_task_df = task_df.loc[task_df["rating"].isna()].copy()
     print(
-        f"[INFO] Wczytano: {len(movies_df)} filmów, {len(train_df)} ocen treningowych "
-        f"({train_df['user_id'].nunique()} użytkowników), {len(task_df)} wierszy w task.csv."
+        f"[INFO] Wczytano {len(movies_df)} filmów, {len(train_df)} ocen treningowych "
+        f"({train_df['user_id'].nunique()} użytkowników), {len(task_df)} wierszy task, "
+        f"w tym {len(missing_task_df)} ocen do uzupełnienia."
     )
 
     raw_client = TMDBRawClient(
@@ -840,68 +879,93 @@ def main():
         raw_cache_path=args.cache_file,
     )
     raw_movies_data = raw_client.load_or_fetch_raw(movies_df)
-
     print("[INFO] Przetwarzanie surowych danych TMDB i ekstrakcja cech...")
     features_by_movie = RawFeatureProcessor.transform_all(raw_movies_data, movies_df)
 
     sorted_movie_ids = sorted(movies_df["movie_id"].astype(int).tolist())
-    movie_id_to_idx = {m_id: i for i, m_id in enumerate(sorted_movie_ids)}
-
+    movie_id_to_idx = {movie_id: i for i, movie_id in enumerate(sorted_movie_ids)}
     sim_matrices = build_component_similarity_matrices(sorted_movie_ids, features_by_movie)
-    print(f"[INFO] Wygenerowano macierze podobieństw dla {len(sim_matrices)} cech: {list(sim_matrices.keys())}")
+    print(f"[INFO] Wygenerowano {len(sim_matrices)} macierzy podobieństwa.")
 
-    evaluate_validation_accuracy(train_df, movie_id_to_idx, sim_matrices, n_splits=5)
+    best_aggregation = "weighted_mean"
+    best_loss = "mae"
+    print(
+        f"[INFO] Używam stałej konfiguracji aggregation={best_aggregation}, loss={best_loss}."
+    )
 
-    t_start = time.time()
-    train_grouped = train_df.groupby("user_id")
-    task_grouped = task_df.groupby("user_id")
+    # Fallback dla użytkownika bez historii: globalna dominanta jest jedyną informacją dostępną.
+    all_vals, all_counts = np.unique(train_df["rating"].to_numpy(dtype=int), return_counts=True)
+    global_mode = int(all_vals[np.argmax(all_counts)]) if len(all_vals) else 3
 
+    train_grouped = {int(uid): group.copy() for uid, group in train_df.groupby("user_id", sort=False)}
     predictions_map: Dict[int, int] = {}
     cv_losses: List[float] = []
     chosen_k_counter: Counter = Counter()
     chosen_feat_counter: Counter = Counter()
+    cold_start_users = set()
+    start = time.time()
 
-    for user_id, user_train in train_grouped:
-        train_m_idx = np.array([movie_id_to_idx[int(m)] for m in user_train["movie_id"]], dtype=int)
-        train_y = user_train["rating"].to_numpy(dtype=float)
+    for user_id, user_task in missing_task_df.groupby("user_id", sort=False):
+        user_id = int(user_id)
+        if user_id not in train_grouped:
+            cold_start_users.add(user_id)
+            preds = np.full(len(user_task), global_mode, dtype=int)
+        else:
+            user_train = train_grouped[user_id]
+            train_m_idx = np.array([movie_id_to_idx[int(m)] for m in user_train["movie_id"]], dtype=int)
+            train_y = user_train["rating"].to_numpy(dtype=int)
+            clf = UserKNNClassifier(
+                user_id=user_id,
+                max_selected_features=args.max_selected_features,
+                aggregation=best_aggregation,
+                loss_name=best_loss,
+            )
+            clf.fit(train_m_idx, train_y, sim_matrices)
+            if np.isfinite(clf.cv_loss):
+                cv_losses.append(clf.cv_loss)
+            chosen_k_counter[clf.best_k] += 1
+            for feature in clf.selected_features:
+                chosen_feat_counter[feature] += 1
+            query_indices = np.array([movie_id_to_idx[int(m)] for m in user_task["movie_id"]], dtype=int)
+            preds = clf.predict(query_indices, sim_matrices)
 
-        clf = UserKNNClassifier(user_id=int(user_id))
-        clf.fit(train_m_idx, train_y, sim_matrices)
-
-        cv_losses.append(clf.cv_loss)
-        chosen_k_counter[clf.best_k] += 1
-        for f in clf.selected_features:
-            chosen_feat_counter[f] += 1
-
-        if user_id in task_grouped.groups:
-            user_task = task_grouped.get_group(user_id)
-            task_m_idx = np.array([movie_id_to_idx[int(m)] for m in user_task["movie_id"]], dtype=int)
-            user_preds = clf.predict(task_m_idx, sim_matrices)
-
-            for row_id, pred_val in zip(user_task["id"], user_preds):
-                predictions_map[int(row_id)] = int(pred_val)
-
-    elapsed = time.time() - t_start
-    print(f"[INFO] Wytrenowano 358 indywidualnych klasyfikatorów kNN w {elapsed:.2f} s.")
-    print(f"[INFO] Średni błąd LOOCV (0.7*MAE + 0.3*Err01): {np.mean(cv_losses):.4f}")
-    print(f"[INFO] Rozkład wybranych wartości k: {dict(chosen_k_counter.most_common())}")
-    print(f"[INFO] Najczęściej wybierane cechy: {chosen_feat_counter.most_common(10)}")
+        for row_id, prediction in zip(user_task["id"], preds):
+            predictions_map[int(row_id)] = int(np.clip(prediction, 0, 5))
 
     submission_df = task_df.copy()
-    submission_df["rating"] = [
-        predictions_map.get(int(r_id), 3) for r_id in submission_df["id"]
-    ]
-    submission_df["rating"] = submission_df["rating"].astype(int)
-    submission_df.to_csv(args.submission_file, sep=";", header=False, index=False)
-    print(f"[INFO] Zapisano wynikowy plik predykcji: {args.submission_file}")
+    missing_mask = submission_df["rating"].isna()
+    if missing_mask.any():
+        submission_df.loc[missing_mask, "rating"] = submission_df.loc[missing_mask, "id"].map(predictions_map)
+    unresolved = submission_df.loc[missing_mask & submission_df["rating"].isna(), "id"].tolist()
+    if unresolved:
+        raise RuntimeError(f"Nie wygenerowano predykcji dla wierszy task.csv: {unresolved[:20]}")
 
-    script_path = os.path.abspath(__file__) if "__file__" in globals() else "solution.py"
+    submission_df["rating"] = pd.to_numeric(submission_df["rating"], errors="raise").astype(int)
+    if not submission_df["rating"].between(0, 5).all():
+        raise RuntimeError("Predykcje poza dopuszczalnym zakresem 0..5.")
+    submission_df.to_csv(args.submission_file, sep=";", header=False, index=False)
+
+    print(f"[INFO] Zapisano submission: {args.submission_file}")
+    print(f"[INFO] Finalny trening/predykcja: {time.time() - start:.2f} s")
+    print(f"[INFO] Rozkład wybranego k: {dict(chosen_k_counter.most_common())}")
+    print(f"[INFO] Najczęściej wybierane cechy: {chosen_feat_counter.most_common(10)}")
+    if cv_losses:
+        print(f"[INFO] Średni najlepszy wewnętrzny LOOCV loss: {float(np.mean(cv_losses)):.4f}")
+    if cold_start_users:
+        print(
+            f"[OSTRZEŻENIE] {len(cold_start_users)} użytkowników nie ma ocen treningowych; "
+            f"użyto globalnej dominanty {global_mode}: {sorted(cold_start_users)[:10]}"
+        )
+
+    script_path = os.path.abspath(__file__) if "__file__" in globals() else os.path.abspath("solution.py")
     create_code_zip(
         args.zip_file,
         files_to_include=[
             script_path,
             args.cache_file,
             args.movie_file,
+            args.train_file,
+            args.task_file,
         ],
     )
 
