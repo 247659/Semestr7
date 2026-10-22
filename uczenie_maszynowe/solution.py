@@ -14,7 +14,6 @@ Generuje pliki:
 """
 
 import os
-import re
 import json
 import math
 import time
@@ -59,7 +58,7 @@ class TMDBRawClient:
         """Pobiera surowy obiekt JSON z TMDB API dla pojedynczego filmu."""
         url = self.BASE_URL.format(tmdb_id=tmdb_id)
         params = {
-            "append_to_response": "credits,keywords,genre",
+            "append_to_response": "credits,keywords",
             "language": self.language,
         }
         headers = {"accept": "application/json"}
@@ -501,7 +500,7 @@ class UserKNNClassifier:
     def __init__(
         self,
         user_id: int,
-        k_candidates: Tuple[int, ...] = (3, 5, 7, 9, 11, 15, 21),
+        k_candidates: Tuple[int, ...] = (2, 3, 4, 5, 7, 9, 11, 15, 17, 21),
         max_selected_features: int = 8,
         eps: float = 1e-4,
     ):
@@ -654,6 +653,7 @@ class UserKNNClassifier:
         remaining: List[str] = list(candidate_features)
         current_sum_sim = np.zeros((n, n), dtype=float)
 
+        best_selected = []
         best_overall_loss = float("inf")
         best_overall_k = 7
         best_overall_p = 1.0
@@ -748,6 +748,8 @@ def evaluate_validation_accuracy(
 ) -> None:
     """
     Przeprowadza walidację krzyżową (K-Fold CV) dla każdego użytkownika osobno.
+    Dla każdego foldu trenuje model (Filter + Wrapper SFS + dobór k) wyłącznie
+    na części treningowej i mierzy Accuracy na odłożonej części testowej.
     """
     rng = np.random.default_rng(seed)
     all_true: List[int] = []
@@ -761,6 +763,7 @@ def evaluate_validation_accuracy(
         m_indices = np.array([movie_id_to_idx[int(m)] for m in user_group["movie_id"]], dtype=int)
         ratings = user_group["rating"].to_numpy(dtype=int)
 
+        # Losowa permutacja 90 filmów użytkownika i podział na n_splits części
         perm = rng.permutation(len(ratings))
         folds = np.array_split(perm, n_splits)
 
@@ -768,11 +771,14 @@ def evaluate_validation_accuracy(
             val_pos = folds[fold_idx]
             train_pos = np.concatenate([folds[i] for i in range(n_splits) if i != fold_idx])
 
+            # Trening klasyfikatora tylko na części treningowej
             clf = UserKNNClassifier(user_id=int(user_id))
             clf.fit(m_indices[train_pos], ratings[train_pos], sim_matrices)
 
+            # Predykcja na niewidzianej części walidacyjnej
             preds = clf.predict(m_indices[val_pos], sim_matrices)
 
+            # Dominanta z części treningowej jako punkt odniesienia (baseline)
             vals, counts = np.unique(ratings[train_pos], return_counts=True)
             mode_val = int(vals[np.argmax(counts)])
 
