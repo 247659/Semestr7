@@ -5,9 +5,8 @@ Rozwiązanie zadania predykcji ocen filmów metodą kNN (osobny klasyfikator dla
 
 Architektura dwuetapowa dla cech z TMDB:
 1. Zapis wszystkich cech w postaci całkowicie surowej (1:1 odpowiedź JSON z TMDB API) do pliku cache.
-2. Dopiero po wczytaniu surowych danych wykonywane są operacje czyszczenia, transformacji
-   (logarytmowanie, obsługa braków danych, ekstrakcja zbiorów z credits/keywords, łączenie tekstów),
-   obliczanie znormalizowanych miar podobieństwa [0, 1] oraz selekcja cech (Filter + Wrapper LOOCV).
+2. Dopiero po wczytaniu surowych danych wykonywane są operacje czyszczenia, transformacji,
+   obliczanie znormalizowanych miar podobieństwa [0, 1] oraz selekcja cech metodą Wrapper (SFS LOOCV).
 
 Generuje pliki:
 1. submission.csv
@@ -27,6 +26,8 @@ from typing import Dict, List, Set, Tuple, Any, Optional
 import requests
 import numpy as np
 import pandas as pd
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 
 # ==============================================================================
@@ -139,21 +140,15 @@ class RawFeatureProcessor:
     - cechy tekstowe (`text_`)
     """
 
-    # Pola techniczne, identyfikatory i flagi o zerowej wariancji, które odrzucamy
     IGNORED_RAW_KEYS = {
         "id", "imdb_id", "backdrop_path", "poster_path", "homepage",
         "adult", "video", "softcore", "status", "title", "original_title"
     }
 
-    # Cechy liczbowe o silnie skośnym rozkładzie wymagające transformacji log(1 + x)
     LOG_TRANSFORM_KEYS = {"budget", "revenue", "popularity", "vote_count"}
 
     @classmethod
     def transform_single_movie(cls, raw: Dict[str, Any], fallback_title: str = "") -> Dict[str, Any]:
-        """
-        Wykonuje docelowe operacje inżynierii cech na surowym słowniku JSON jednego filmu.
-        """
-        # Obsługa kompatybilności wstecznej, jeśli w cache zapisano już przetworzone klucze
         if any(k.startswith(("num_", "set_", "cat_", "text_")) for k in raw.keys()):
             converted = dict(raw)
             for k, v in list(converted.items()):
@@ -163,92 +158,87 @@ class RawFeatureProcessor:
 
         features: Dict[str, Any] = {}
 
-        # 1. Automatyczny przegląd głównych pól surowego JSON-a
         for key, val in raw.items():
             if val is None or key in cls.IGNORED_RAW_KEYS:
                 continue
 
-            # A) Wartości liczbowe (int / float)
+            # Cechy liczbowe
             if isinstance(val, (int, float)) and not isinstance(val, bool):
                 val_float = float(val)
                 if key in cls.LOG_TRANSFORM_KEYS:
-                    # Budżet lub przychód równy 0 w TMDB oznacza brak danych (NaN)
                     features[f"num_{key}_log"] = math.log1p(val_float) if val_float > 0 else np.nan
                 else:
                     features[f"num_{key}"] = val_float if val_float > 0 else np.nan
 
-            # B) Data premiery -> wyodrębnienie roku jako cechy liczbowej
+            # Rok premiery
             elif key == "release_date" and isinstance(val, str):
                 if len(val) >= 4 and val[:4].isdigit():
                     features["num_release_year"] = float(val[:4])
                 else:
                     features["num_release_year"] = np.nan
 
-            # C) Listy obiektów/słowników (np. genres, production_companies, countries, languages)
-            # Niech z genres wyjmuje tylko name
-            # z production companies tylko name i origin_country
-            # z belongs to collection
-            # z production countires iso_3166_1
-            # z spoken language iso_639_1
-            # z cast name, gender
-            # z crew gender i name
-            # z keywords name
-            elif isinstance(val, list) and val and isinstance(val[0], dict):
-                extracted_set: Set[str] = set()
+            # Ekstrakcja cech obiektowych zgodnie ze specyfikacją
+            elif key == "genres" and isinstance(val, list):
+                extracted = {
+                    str(item["name"]).strip().lower()
+                    for item in val
+                    if isinstance(item, dict) and item.get("name")
+                }
+                if extracted:
+                    features["set_genres"] = extracted
+
+            elif key == "production_companies" and isinstance(val, list):
+                extracted = set()
                 for item in val:
-                    name = item.get("name") or item.get("english_name") or item.get("iso_3166_1")
-                    if name:
-                        extracted_set.add(str(name).strip().lower())
-                if extracted_set:
-                    features[f"set_{key}"] = extracted_set
+                    if isinstance(item, dict):
+                        if item.get("name"):
+                            extracted.add(str(item["name"]).strip().lower())
+                        if item.get("origin_country"):
+                            extracted.add(str(item["origin_country"]).strip().lower())
+                if extracted:
+                    features["set_production_companies"] = extracted
 
-            # D) Listy prostych wartości tekstowych (np. origin_country: ["US"])
-            elif isinstance(val, list) and val and isinstance(val[0], str):
-                extracted_set = {str(x).strip().lower() for x in val if x and str(x).strip()}
-                if extracted_set:
-                    features[f"set_{key}"] = extracted_set
+            elif key == "production_countries" and isinstance(val, list):
+                extracted = {
+                    str(item["iso_3166_1"]).strip().lower()
+                    for item in val
+                    if isinstance(item, dict) and item.get("iso_3166_1")
+                }
+                if extracted:
+                    features["set_production_countries"] = extracted
 
-        # 2. Przetwarzanie zagnieżdżonego obiektu `credits` (obsada i ekipa filmowa)
+            elif key == "spoken_languages" and isinstance(val, list):
+                extracted = {
+                    str(item["iso_639_1"]).strip().lower()
+                    for item in val
+                    if isinstance(item, dict) and item.get("iso_639_1")
+                }
+                if extracted:
+                    features["set_spoken_languages"] = extracted
+
+        # Obsługa credits: cast (Top 5) i crew (wyłącznie Director i jego name)
         credits_data = raw.get("credits")
         if isinstance(credits_data, dict):
-            # Top 15 najważniejszych aktorów z obsady (według kolejności w czołówce)
             cast_raw = credits_data.get("cast") or []
             cast_set = {
                 str(c["name"]).strip().lower()
-                for c in cast_raw[:15]
+                for c in cast_raw[:5]
                 if isinstance(c, dict) and c.get("name")
             }
             if cast_set:
                 features["set_cast"] = cast_set
 
-            # Ekipa twórcza: reżyserzy, scenarzyści, kompozytorzy muzyki
+            # Filtrowanie wyłącznie reżyserów (job == "Director")
             crew_raw = credits_data.get("crew") or []
-            directors: Set[str] = set()
-            writers: Set[str] = set()
-            composers: Set[str] = set()
+            directors_set = {
+                str(m["name"]).strip().lower()
+                for m in crew_raw
+                if isinstance(m, dict) and m.get("name") and m.get("job") == "Director"
+            }
+            if directors_set:
+                features["set_director"] = directors_set
 
-            for member in crew_raw:
-                if not isinstance(member, dict) or not member.get("name"):
-                    continue
-                person_name = str(member["name"]).strip().lower()
-                job = member.get("job") or ""
-                dept = member.get("department") or ""
-
-                if job == "Director":
-                    directors.add(person_name)
-                if dept == "Writing" or job in ("Screenplay", "Writer", "Story"):
-                    writers.add(person_name)
-                if job == "Original Music Composer":
-                    composers.add(person_name)
-
-            if directors:
-                features["set_directors"] = directors
-            if writers:
-                features["set_writers"] = writers
-            if composers:
-                features["set_composers"] = composers
-
-        # 3. Przetwarzanie zagnieżdżonego obiektu `keywords` (słowa kluczowe)
+        # Słowa kluczowe: keywords (wyłącznie pole name)
         kw_data = raw.get("keywords")
         if isinstance(kw_data, dict):
             kw_list = kw_data.get("keywords") or []
@@ -260,16 +250,16 @@ class RawFeatureProcessor:
             if kw_set:
                 features["set_keywords"] = kw_set
 
-        # 4. Cechy kategoryczne (język oryginału oraz przynależność do kolekcji/serii)
+        # Cechy kategoryczne: język oraz kolekcja (wyłącznie pole name kolekcji)
         orig_lang = raw.get("original_language")
         if orig_lang and isinstance(orig_lang, str):
             features["cat_original_language"] = orig_lang.strip().lower()
 
         collection = raw.get("belongs_to_collection")
-        if isinstance(collection, dict) and collection.get("id") is not None:
-            features["cat_collection_id"] = str(collection["id"])
+        if isinstance(collection, dict) and collection.get("name"):
+            features["cat_belongs_to_collection"] = str(collection["name"]).strip().lower()
 
-        # 5. Cechy tekstowe: połączenie tagline i overview w jeden opis pod TF-IDF
+        # Opisy tekstowe
         tagline = (raw.get("tagline") or "").strip()
         overview = (raw.get("overview") or "").strip()
         combined_text = f"{tagline} {overview}".strip()
@@ -305,7 +295,6 @@ def compute_numeric_similarity_matrix(values: List[Any]) -> np.ndarray:
     """
     Znormalizowana miara podobieństwa [0, 1] dla cechy liczbowej:
     s(x, y) = 1 - |x - y| / (max - min).
-    Brakujące wartości (NaN) zastępowane są medianą z dostępnych obserwacji.
     """
     arr = np.array([float(v) if v is not None else np.nan for v in values], dtype=float)
     valid_mask = ~np.isnan(arr)
@@ -350,71 +339,100 @@ def compute_set_similarity_matrix(sets_list: List[Set[str]]) -> np.ndarray:
                 sim[j, i] = val
     return sim
 
-# a co jak mamy kilka kategorii, np. kilka gatunków dla filmu??
-def compute_categorical_similarity_matrix(categories: List[str]) -> np.ndarray:
+
+def compute_top_people_similarity_matrix(people_lists: List[Set[str]]) -> np.ndarray:
     """
-    Miara podobieństwa [0, 1] dla cechy kategorycznej:
-    1.0 w przypadku identycznych niepustych wartości, 0.0 w przeciwnym razie.
+    Miara podobieństwa z nasyceniem dla głównych aktorów (set_cast) oraz twórców (set_crew):
+    1 wspólna kluczowa osoba = 0.70, 2 lub więcej = 1.00.
+    """
+    n = len(people_lists)
+    sim = np.zeros((n, n), dtype=float)
+
+    for i in range(n):
+        sim[i, i] = 1.0
+        set_i = people_lists[i]
+        if not set_i:
+            continue
+        for j in range(i + 1, n):
+            set_j = people_lists[j]
+            if not set_j:
+                continue
+
+            common = len(set_i & set_j)
+            if common >= 2:
+                val = 1.0
+            elif common == 1:
+                val = 0.70
+            else:
+                val = 0.0
+
+            sim[i, j] = val
+            sim[j, i] = val
+
+    return sim
+
+
+def compute_categorical_similarity_matrix(categories: List[Any]) -> np.ndarray:
+    """
+    Znormalizowana miara podobieństwa [0, 1] dla cech kategorycznych (pojedynczych i wielowartościowych).
     """
     n = len(categories)
     sim = np.zeros((n, n), dtype=float)
+
+    normalized_sets: List[Set[str]] = []
+    for c in categories:
+        if c is None or c == "":
+            normalized_sets.append(set())
+        elif isinstance(c, (set, list, tuple)):
+            normalized_sets.append({str(x).strip().lower() for x in c if str(x).strip()})
+        else:
+            normalized_sets.append({str(c).strip().lower()})
+
     for i in range(n):
         sim[i, i] = 1.0
-        cat_i = categories[i]
-        if not cat_i:
+        set_i = normalized_sets[i]
+        if not set_i:
             continue
         for j in range(i + 1, n):
-            if categories[j] == cat_i:
-                sim[i, j] = 1.0
-                sim[j, i] = 1.0
+            set_j = normalized_sets[j]
+            if not set_j:
+                continue
+            inter = len(set_i & set_j)
+            if inter > 0:
+                val = inter / len(set_i | set_j)
+                sim[i, j] = val
+                sim[j, i] = val
     return sim
 
 
 def compute_text_similarity_matrix(texts: List[str]) -> np.ndarray:
+    """Oblicza macierz podobieństwa cosinusowego [0, 1] na reprezentacji TF-IDF.
+
+    Puste dokumenty lub dokumenty bez słów kluczowych mają zerowe podobieństwo
+    z innymi, a na przekątnej zachowują 1.0.
     """
-    Podobieństwo cosinusowe [0, 1] na reprezentacji TF-IDF dla opisów tekstowych.
-    """
-    n = len(texts)
-    stop_words = {
-        "the", "a", "an", "and", "or", "of", "to", "in", "on", "for", "with",
-        "is", "are", "was", "were", "by", "at", "from", "as", "that", "this",
-        "his", "her", "their", "its", "it", "be", "into", "who", "when", "after",
-        "but", "has", "have", "had", "not", "they", "he", "she", "him", "them"
-    }
+    if not texts:
+        return np.empty((0, 0), dtype=float)
 
-    tokenized_docs: List[List[str]] = []
-    df_counts: Counter = Counter()
+    # TfidfVectorizer automatycznie:
+    # 1. Zamienia tekst na lowercase
+    # 2. Tokenizuje (domyślny regex: r'(?u)\b\w\w+\b')
+    # 3. Usuwa stop words (wbudowana lista 'english')
+    # 4. Normalizuje wektory L2
+    vectorizer = TfidfVectorizer(stop_words="english")
 
-    for txt in texts:
-        tokens = [
-            tok for tok in re.findall(r"[a-z0-9]{2,}", (txt or "").lower())
-            if tok not in stop_words
-        ]
-        tokenized_docs.append(tokens)
-        for unique_tok in set(tokens):
-            df_counts[unique_tok] += 1
+    try:
+        tfidf_matrix = vectorizer.fit_transform(texts)
+    except ValueError:
+        # Obsługa przypadku, gdy wszystkie słowa w całym zbiorze to stop words
+        sim = np.zeros((len(texts), len(texts)), dtype=float)
+        np.fill_diagonal(sim, 1.0)
+        return sim
 
-    vocab = {tok: idx for idx, tok in enumerate(df_counts.keys())}
-    if not vocab:
-        return np.eye(n, dtype=float)
+    # Obliczenie podobieństwa cosinusowego
+    sim = cosine_similarity(tfidf_matrix)
 
-    tfidf = np.zeros((n, len(vocab)), dtype=float)
-    for i, tokens in enumerate(tokenized_docs):
-        if not tokens:
-            continue
-        tf_counter = Counter(tokens)
-        doc_len = len(tokens)
-        for tok, count in tf_counter.items():
-            j = vocab[tok]
-            tf = count / doc_len
-            idf = math.log((1.0 + n) / (1.0 + df_counts[tok])) + 1.0
-            tfidf[i, j] = tf * idf
-
-    norms = np.linalg.norm(tfidf, axis=1, keepdims=True)
-    norms_safe = np.where(norms > 0, norms, 1.0)
-    normalized_tfidf = tfidf / norms_safe
-
-    sim = normalized_tfidf @ normalized_tfidf.T
+    # Zabezpieczenie numeryczne i spójność przekątnej
     np.fill_diagonal(sim, 1.0)
     return np.clip(sim, 0.0, 1.0)
 
@@ -424,25 +442,30 @@ def build_component_similarity_matrices(
     features_by_movie: Dict[int, Dict[str, Any]],
 ) -> Dict[str, np.ndarray]:
     """
-    Automatycznie dobiera funkcję podobieństwa na podstawie prefiksu cechy
-    (num_, set_, cat_, text_) i wyznacza macierz podobieństwa (N x N) w skali [0, 1].
+    Buduje słownik macierzy podobieństwa (N x N) w skali [0, 1].
+    Sortuje klucze według malejącej wariancji pozadiagonalnej (zamiast alfabetycznie),
+    aby wyeliminować faworyzowanie prefiksu 'cat_' przy remisach.
     """
     all_feature_keys: Set[str] = set()
     for f_dict in features_by_movie.values():
         all_feature_keys.update(f_dict.keys())
 
-    sim_matrices: Dict[str, np.ndarray] = {}
+    temp_matrices: List[Tuple[float, str, np.ndarray]] = []
+    diag_mask = ~np.eye(len(movie_ids), dtype=bool)
 
-    for feat_name in sorted(all_feature_keys):
+    for feat_name in all_feature_keys:
         raw_values = [features_by_movie[m_id].get(feat_name) for m_id in movie_ids]
 
-        if feat_name.startswith("num_"):
+        if feat_name in ("set_cast"):
+            safe_sets = [s if isinstance(s, set) else set() for s in raw_values]
+            mat = compute_top_people_similarity_matrix(safe_sets)
+        elif feat_name.startswith("num_"):
             mat = compute_numeric_similarity_matrix(raw_values)
         elif feat_name.startswith("set_"):
             safe_sets = [s if isinstance(s, set) else set() for s in raw_values]
             mat = compute_set_similarity_matrix(safe_sets)
         elif feat_name.startswith("cat_"):
-            safe_cats = [str(c) if c is not None else "" for c in raw_values]
+            safe_cats = [c if c is not None else "" for c in raw_values]
             mat = compute_categorical_similarity_matrix(safe_cats)
         elif feat_name.startswith("text_"):
             safe_texts = [str(t) if t is not None else "" for t in raw_values]
@@ -450,84 +473,90 @@ def build_component_similarity_matrices(
         else:
             continue
 
-        # Zachowaj wyłącznie cechy posiadające niezerową wariancję poza przekątną
-        off_diag = mat[~np.eye(len(movie_ids), dtype=bool)]
-        if len(off_diag) > 0 and np.std(off_diag) > 1e-5:
-            sim_matrices[feat_name] = mat
+        off_diag = mat[diag_mask]
+        std_val = float(np.std(off_diag)) if len(off_diag) > 0 else 0.0
+        if std_val > 1e-5:
+            # Jako kryterium porządkujące stosujemy zróżnicowanie informacyjne cechy
+            temp_matrices.append((std_val, feat_name, mat))
 
-    return sim_matrices
+    # Sortowanie od cech najbardziej zróżnicowanych informacyjnie
+    temp_matrices.sort(key=lambda x: x[0], reverse=True)
+    return {feat_name: mat for _, feat_name, mat in temp_matrices}
 
 
 # ==============================================================================
-# 4. INDYWIDUALNY KLASYFIKATOR kNN Z SELEKCJĄ CECH (FILTER + WRAPPER LOOCV)
+# 4. INDYWIDUALNY KLASYFIKATOR kNN Z SELEKCJĄ CECH (WRAPPER LOOCV)
 # ==============================================================================
 
 class UserKNNClassifier:
     """
     Osobny klasyfikator kNN dla pojedynczego użytkownika.
-    Dobiera optymalny zestaw cech (Filter + Wrapper SFS), ich wagi, hiperparametr k
-    oraz metodę agregacji sąsiadów za pomocą walidacji krzyżowej Leave-One-Out (LOOCV).
+    Ocena ustalana jest wyłącznie poprzez głosowanie odległościowe (Distance-Weighted Voting),
+    w którym każdy z k najbliższych sąsiadów oddaje głos o wadze proporcjonalnej
+    do bliskości (odwrotności odległości) na swoją klasę oceny {0, 1, 2, 3, 4, 5}.
     """
+
+    SPARSE_BONUS_FEATURES = {"cat_belongs_to_collection"}
 
     def __init__(
         self,
         user_id: int,
-        k_candidates: Tuple[int, ...] = (3, 5, 7, 9, 11, 15, 21, 27),
+        k_candidates: Tuple[int, ...] = (3, 5, 7, 9, 11, 15, 21),
         max_selected_features: int = 8,
-        filter_top_m: int = 15,
+        eps: float = 1e-4,
     ):
         self.user_id = user_id
         self.k_candidates = k_candidates
         self.max_selected_features = max_selected_features
-        self.filter_top_m = filter_top_m
+        self.eps = eps
 
         self.train_indices: np.ndarray = np.array([], dtype=int)
-        self.train_ratings: np.ndarray = np.array([], dtype=float)
+        self.train_ratings: np.ndarray = np.array([], dtype=int)
         self.selected_features: List[str] = []
-        self.feature_weights: Dict[str, float] = {}
         self.best_k: int = 7
-        self.best_aggregation: str = "weighted_mean"
         self.best_power: float = 1.0
         self.cv_loss: float = 0.0
-        self.user_mean_rating: float = 3.0
+        self.user_mode_rating: int = 3
 
-    @staticmethod
     def _predict_from_neighbors(
+        self,
         sim_matrix: np.ndarray,
         train_ratings: np.ndarray,
         k: int,
-        aggregation: str,
         power: float,
-        fallback_rating: float,
+        fallback_rating: int,
     ) -> np.ndarray:
-        """Wyznacza predykcję oceny {0, 1, 2, 3, 4, 5} na podstawie k najbliższych sąsiadów."""
+        """
+        Klasyfikacja wyłącznie metodą głosowania odległościowego.
+        Waga sąsiada: w = (sim)^power / (1 - sim + eps).
+        """
         n_queries, n_train = sim_matrix.shape
         k_eff = min(k, n_train)
 
+        # Wybór k najbliższych sąsiadów
         order = np.argsort(-sim_matrix, axis=1)[:, :k_eff]
         top_sims = np.take_along_axis(sim_matrix, order, axis=1)
         top_ratings = train_ratings[order]
 
-        weights = np.power(np.maximum(top_sims, 0.0), power)
-        weight_sums = np.sum(weights, axis=1)
+        # Waga zależna od odległości: d = 1 - sim -> waga rośnie gwałtownie, gdy d dąży do 0
+        distances = np.maximum(1.0 - top_sims, 0.0)
+        weights = np.power(np.maximum(top_sims, 0.0), power) / (distances + self.eps)
 
         preds = np.empty(n_queries, dtype=int)
 
-        if aggregation == "weighted_mean":
-            valid = weight_sums > 1e-8
-            cont_pred = np.full(n_queries, fallback_rating, dtype=float)
-            cont_pred[valid] = np.sum(weights[valid] * top_ratings[valid], axis=1) / weight_sums[valid]
-            preds = np.clip(np.rint(cont_pred), 0, 5).astype(int)
+        for i in range(n_queries):
+            w_row = weights[i]
+            if np.sum(w_row) <= 1e-8:
+                preds[i] = fallback_rating
+                continue
 
-        elif aggregation == "weighted_voting":
-            for i in range(n_queries):
-                if weight_sums[i] <= 1e-8:
-                    preds[i] = int(np.clip(round(fallback_rating), 0, 5))
-                    continue
-                class_scores = np.zeros(6, dtype=float)
-                for r_val, w_val in zip(top_ratings[i], weights[i]):
-                    class_scores[int(r_val)] += w_val
-                preds[i] = int(np.argmax(class_scores))
+            # Tablica sumy głosów na każdą z 6 klas ocen {0, 1, 2, 3, 4, 5}
+            votes = np.zeros(6, dtype=float)
+            for r_val, w_val in zip(top_ratings[i], w_row):
+                votes[int(r_val)] += w_val
+
+            # Wybór oceny z największą sumą głosów ważonych odległością
+            preds[i] = int(np.argmax(votes))
 
         return preds
 
@@ -535,8 +564,11 @@ class UserKNNClassifier:
         self,
         combined_sim_sub: np.ndarray,
         y: np.ndarray,
-    ) -> Tuple[float, int, str, float]:
-        """Walidacja Leave-One-Out (LOOCV) dla oceny jakości podzbioru cech i doboru k."""
+    ) -> Tuple[float, int, float]:
+        """
+        Ocena jakości podzbioru cech w procedurze LOOCV wyłącznie za pomocą
+        głosowania odległościowego. Dobiera optymalne parametry k oraz power.
+        """
         S = combined_sim_sub.copy()
         np.fill_diagonal(S, -1.0)
 
@@ -546,83 +578,46 @@ class UserKNNClassifier:
         sorted_sims = np.maximum(np.take_along_axis(S, order, axis=1), 0.0)
         sorted_y = y[order]
 
+        sorted_dist = np.maximum(1.0 - sorted_sims, 0.0)
+
         best_loss = float("inf")
         best_k = self.k_candidates[0]
-        best_agg = "weighted_mean"
         best_p = 1.0
 
         for p in (1.0, 2.0):
-            w_all = np.power(sorted_sims, p)
+            # Obliczenie wag odległościowych dla wszystkich sąsiadów
+            w_all = np.power(sorted_sims, p) / (sorted_dist + self.eps)
+
             for k in self.k_candidates:
                 if k >= n:
                     continue
-                w = w_all[:, :k]
+
+                w_k = w_all[:, :k]
                 y_k = sorted_y[:, :k]
-                w_sum = np.sum(w, axis=1)
-                valid = w_sum > 1e-8
 
-                cont = np.full(n, self.user_mean_rating, dtype=float)
-                cont[valid] = np.sum(w[valid] * y_k[valid], axis=1) / w_sum[valid]
-                pred_mean = np.clip(np.rint(cont), 0, 5)
+                # Przeprowadzenie głosowania odległościowego dla wszystkich próbek LOOCV
+                pred_vote = np.empty(n, dtype=int)
+                for i in range(n):
+                    if np.sum(w_k[i]) <= 1e-8:
+                        pred_vote[i] = self.user_mode_rating
+                        continue
 
-                mae = np.mean(np.abs(pred_mean - y))
-                zero_one = np.mean(pred_mean != y)
+                    votes = np.zeros(6, dtype=float)
+                    for r_val, w_val in zip(y_k[i], w_k[i]):
+                        votes[int(r_val)] += w_val
+                    pred_vote[i] = int(np.argmax(votes))
+
+                # Metryka błędu: kombinacja MAE i błędu klasyfikacji (0-1 loss)
+                mae = np.mean(np.abs(pred_vote - y))
+                zero_one = np.mean(pred_vote != y)
                 loss = 0.7 * mae + 0.3 * zero_one
 
                 if loss < best_loss:
                     best_loss = loss
                     best_k = k
-                    best_agg = "weighted_mean"
                     best_p = p
 
-        # Sprawdzenie ważonego głosowania dla najlepszego k oraz p
-        w_best = np.power(sorted_sims[:, :best_k], best_p)
-        y_best = sorted_y[:, :best_k]
-        vote_scores = np.zeros((n, 6), dtype=float)
-        for c in range(6):
-            vote_scores[:, c] = np.sum(w_best * (y_best == c), axis=1)
-        pred_vote = np.argmax(vote_scores, axis=1)
-        no_weight = np.sum(w_best, axis=1) <= 1e-8
-        pred_vote[no_weight] = int(np.clip(round(self.user_mean_rating), 0, 5))
-
-        loss_vote = 0.7 * np.mean(np.abs(pred_vote - y)) + 0.3 * np.mean(pred_vote != y)
-        if loss_vote < best_loss:
-            best_loss = loss_vote
-            best_agg = "weighted_voting"
-
-        return best_loss, best_k, best_agg, best_p
-
-    def _filter_features(
-        self,
-        sim_matrices: Dict[str, np.ndarray],
-        idx: np.ndarray,
-        y: np.ndarray,
-    ) -> List[Tuple[str, float]]:
-        """
-        Selekcja typu Filter: ocenia korelację podobieństwa filmów względem danej cechy
-        z bliskością ocen wystawionych przez użytkownika: 1 - |y_i - y_j| / 5.
-        """
-        n = len(y)
-        triu_i, triu_j = np.triu_indices(n, k=1)
-        rating_sim = 1.0 - (np.abs(y[triu_i] - y[triu_j]) / 5.0)
-        rating_sim_centered = rating_sim - np.mean(rating_sim)
-        denom_y = np.linalg.norm(rating_sim_centered)
-
-        scores: List[Tuple[str, float]] = []
-        for feat_name, full_mat in sim_matrices.items():
-            sub_mat = full_mat[np.ix_(idx, idx)]
-            feat_vec = sub_mat[triu_i, triu_j]
-            feat_centered = feat_vec - np.mean(feat_vec)
-            denom_x = np.linalg.norm(feat_centered)
-
-            if denom_x > 1e-8 and denom_y > 1e-8:
-                corr = float(np.dot(feat_centered, rating_sim_centered) / (denom_x * denom_y))
-            else:
-                corr = 0.0
-            scores.append((feat_name, corr))
-
-        scores.sort(key=lambda x: x[1], reverse=True)
-        return scores
+        return best_loss, best_k, best_p
 
     def fit(
         self,
@@ -630,80 +625,78 @@ class UserKNNClassifier:
         train_ratings: np.ndarray,
         sim_matrices: Dict[str, np.ndarray],
     ) -> "UserKNNClassifier":
-        """Trenuje indywidualny model użytkownika (Filter + Wrapper SFS + strojenie k)."""
+        """
+        Dopasowanie modelu użytkownika metodą Sequential Forward Selection (SFS)
+        sterowaną wyłącznie błędem głosowania odległościowego w LOOCV.
+        """
         self.train_indices = train_movie_indices
-        self.train_ratings = train_ratings.astype(float)
-        self.user_mean_rating = float(np.mean(self.train_ratings))
+        self.train_ratings = train_ratings.astype(int)
 
-        # Etap 1: Selekcja cech metodą Filter
-        ranked_features = self._filter_features(
-            sim_matrices, self.train_indices, self.train_ratings
-        )
-        candidate_features = [f for f, _ in ranked_features[: self.filter_top_m]]
+        # Jako ocenę domyślną (fallback) przyjmujemy dominantę ocen użytkownika
+        vals, counts = np.unique(self.train_ratings, return_counts=True)
+        self.user_mode_rating = int(vals[np.argmax(counts)])
 
+        n = len(self.train_indices)
+        candidate_features = list(sim_matrices.keys())
         user_sub_matrices = {
             f: sim_matrices[f][np.ix_(self.train_indices, self.train_indices)]
             for f in candidate_features
         }
-        filter_dict = dict(ranked_features)
 
-        # Etap 2: Selekcja cech metodą Wrapper (Sequential Forward Selection)
+        feature_coverage: Dict[str, float] = {}
+        for f, sub_mat in user_sub_matrices.items():
+            off_diag = sub_mat.copy()
+            np.fill_diagonal(off_diag, 0.0)
+            active_rows = np.sum(np.max(off_diag, axis=1) > 1e-5)
+            feature_coverage[f] = active_rows / max(1, n)
+
         selected: List[str] = []
         remaining: List[str] = list(candidate_features)
-        current_weighted_sum = np.zeros(
-            (len(self.train_indices), len(self.train_indices)), dtype=float
-        )
-        current_total_weight = 0.0
+        current_sum_sim = np.zeros((n, n), dtype=float)
 
         best_overall_loss = float("inf")
         best_overall_k = 7
-        best_overall_agg = "weighted_mean"
         best_overall_p = 1.0
 
-        for _ in range(min(self.max_selected_features, len(candidate_features))):
+        max_steps = min(self.max_selected_features, len(candidate_features))
+
+        for step in range(max_steps):
             step_best_feat = None
             step_best_loss = float("inf")
             step_best_k = 7
-            step_best_agg = "weighted_mean"
             step_best_p = 1.0
-            step_best_weight = 1.0
 
             for feat in remaining:
-                w_f = max(0.5, 1.0 + 2.0 * max(0.0, filter_dict.get(feat, 0.0)))
-                cand_sim = (current_weighted_sum + w_f * user_sub_matrices[feat]) / (
-                    current_total_weight + w_f
-                )
-                loss, k_opt, agg_opt, p_opt = self._evaluate_loocv(
-                    cand_sim, self.train_ratings
-                )
+                if step == 0 and (
+                    feat in self.SPARSE_BONUS_FEATURES or feature_coverage[feat] < 0.25
+                ):
+                    continue
+
+                cand_sim = (current_sum_sim + user_sub_matrices[feat]) / (len(selected) + 1)
+                loss, k_opt, p_opt = self._evaluate_loocv(cand_sim, self.train_ratings)
+
                 if loss < step_best_loss:
                     step_best_loss = loss
                     step_best_feat = feat
                     step_best_k = k_opt
-                    step_best_agg = agg_opt
                     step_best_p = p_opt
-                    step_best_weight = w_f
 
             if step_best_feat is not None and (
                 step_best_loss <= best_overall_loss + 1e-6 or len(selected) < 2
             ):
                 selected.append(step_best_feat)
                 remaining.remove(step_best_feat)
-                self.feature_weights[step_best_feat] = step_best_weight
-                current_weighted_sum += step_best_weight * user_sub_matrices[step_best_feat]
-                current_total_weight += step_best_weight
+                current_sum_sim += user_sub_matrices[step_best_feat]
 
                 if step_best_loss < best_overall_loss:
                     best_overall_loss = step_best_loss
                     best_overall_k = step_best_k
-                    best_overall_agg = step_best_agg
                     best_overall_p = step_best_p
             else:
                 break
 
         self.selected_features = selected
         self.best_k = best_overall_k
-        self.best_aggregation = best_overall_agg
         self.best_power = best_overall_p
         self.cv_loss = best_overall_loss
         return self
@@ -713,28 +706,23 @@ class UserKNNClassifier:
         query_movie_indices: np.ndarray,
         sim_matrices: Dict[str, np.ndarray],
     ) -> np.ndarray:
-        """Generuje predykcje ocen dla nowych filmów rozważanego użytkownika."""
+        """Predykcja ocen nowych filmów wyłącznie przez głosowanie odległościowe."""
         n_queries = len(query_movie_indices)
         n_train = len(self.train_indices)
 
         combined_sim = np.zeros((n_queries, n_train), dtype=float)
-        total_w = 0.0
 
-        for feat in self.selected_features:
-            w = self.feature_weights.get(feat, 1.0)
-            combined_sim += w * sim_matrices[feat][np.ix_(query_movie_indices, self.train_indices)]
-            total_w += w
-
-        if total_w > 0:
-            combined_sim /= total_w
+        if self.selected_features:
+            for feat in self.selected_features:
+                combined_sim += sim_matrices[feat][np.ix_(query_movie_indices, self.train_indices)]
+            combined_sim /= len(self.selected_features)
 
         return self._predict_from_neighbors(
             sim_matrix=combined_sim,
             train_ratings=self.train_ratings,
             k=self.best_k,
-            aggregation=self.best_aggregation,
             power=self.best_power,
-            fallback_rating=self.user_mean_rating,
+            fallback_rating=self.user_mode_rating,
         )
 
 
@@ -751,6 +739,65 @@ def create_code_zip(zip_filename: str, files_to_include: List[str]) -> None:
     print(f"[INFO] Utworzono archiwum z kodem i surowymi zasobami: {zip_filename}")
 
 
+def evaluate_validation_accuracy(
+    train_df: pd.DataFrame,
+    movie_id_to_idx: Dict[int, int],
+    sim_matrices: Dict[str, np.ndarray],
+    n_splits: int = 5,
+    seed: int = 42,
+) -> None:
+    """
+    Przeprowadza walidację krzyżową (K-Fold CV) dla każdego użytkownika osobno.
+    """
+    rng = np.random.default_rng(seed)
+    all_true: List[int] = []
+    all_pred: List[int] = []
+    all_baseline_mode: List[int] = []
+
+    t0 = time.time()
+    print(f"\n[WALIDACJA] Uruchamianie {n_splits}-krotnej walidacji krzyżowej dla 358 użytkowników...")
+
+    for user_id, user_group in train_df.groupby("user_id"):
+        m_indices = np.array([movie_id_to_idx[int(m)] for m in user_group["movie_id"]], dtype=int)
+        ratings = user_group["rating"].to_numpy(dtype=int)
+
+        perm = rng.permutation(len(ratings))
+        folds = np.array_split(perm, n_splits)
+
+        for fold_idx in range(n_splits):
+            val_pos = folds[fold_idx]
+            train_pos = np.concatenate([folds[i] for i in range(n_splits) if i != fold_idx])
+
+            clf = UserKNNClassifier(user_id=int(user_id))
+            clf.fit(m_indices[train_pos], ratings[train_pos], sim_matrices)
+
+            preds = clf.predict(m_indices[val_pos], sim_matrices)
+
+            vals, counts = np.unique(ratings[train_pos], return_counts=True)
+            mode_val = int(vals[np.argmax(counts)])
+
+            all_true.extend(ratings[val_pos].tolist())
+            all_pred.extend(preds.tolist())
+            all_baseline_mode.extend([mode_val] * len(val_pos))
+
+    y_true = np.array(all_true, dtype=int)
+    y_pred = np.array(all_pred, dtype=int)
+    y_base = np.array(all_baseline_mode, dtype=int)
+
+    acc_exact = np.mean(y_pred == y_true)
+    acc_base = np.mean(y_base == y_true)
+    acc_within_1 = np.mean(np.abs(y_pred - y_true) <= 1)
+    mae = np.mean(np.abs(y_pred - y_true))
+
+    print("=" * 65)
+    print(f"WYNIKI WALIDACJI KRZYŻOWEJ ({n_splits}-Fold CV, łącznie {len(y_true)} ocen):")
+    print(f" -> Accuracy dokładne (y_pred == y_true): {acc_exact * 100:.2f}% (Baseline mody: {acc_base * 100:.2f}%)")
+    print(f" -> Accuracy +/- 1 gwiazdka (|err| <= 1): {acc_within_1 * 100:.2f}%")
+    print(f" -> Średni błąd bezwzględny (MAE):        {mae:.4f}")
+    print(f" -> Czas walidacji:                       {time.time() - t0:.2f} s")
+    print("=" * 65 + "\n")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Predykcja ocen filmów metodą kNN (zapis surowych danych TMDB + przetwarzanie w pamięci)."
@@ -765,7 +812,6 @@ def main():
     parser.add_argument("--bearer-token", default=None, help="Token Bearer API v4 do bazy TMDB")
     args = parser.parse_args()
 
-    # 1. Wczytanie plików CSV
     movies_df = pd.read_csv(
         args.movie_file, sep=";", header=None, names=["movie_id", "tmdb_id", "title"]
     )
@@ -782,7 +828,6 @@ def main():
         f"({train_df['user_id'].nunique()} użytkowników), {len(task_df)} wierszy w task.csv."
     )
 
-    # 2. Pobranie lub wczytanie SUROWYCH danych z TMDB API (zapis 1:1 w pliku JSON)
     raw_client = TMDBRawClient(
         api_key=args.api_key,
         bearer_token=args.bearer_token,
@@ -790,11 +835,9 @@ def main():
     )
     raw_movies_data = raw_client.load_or_fetch_raw(movies_df)
 
-    # 3. Wykonanie wymaganych operacji transformacji i ekstrakcji cech dopiero w pamięci
     print("[INFO] Przetwarzanie surowych danych TMDB i ekstrakcja cech...")
     features_by_movie = RawFeatureProcessor.transform_all(raw_movies_data, movies_df)
 
-    # 4. Wyznaczenie znormalizowanych macierzy podobieństw [0, 1] dla każdego komponentu
     sorted_movie_ids = sorted(movies_df["movie_id"].astype(int).tolist())
     movie_id_to_idx = {m_id: i for i, m_id in enumerate(sorted_movie_ids)}
 
@@ -803,7 +846,6 @@ def main():
 
     evaluate_validation_accuracy(train_df, movie_id_to_idx, sim_matrices, n_splits=5)
 
-    # 5. Trening indywidualnych klasyfikatorów kNN i predykcja dla każdego użytkownika
     t_start = time.time()
     train_grouped = train_df.groupby("user_id")
     task_grouped = task_df.groupby("user_id")
@@ -839,7 +881,6 @@ def main():
     print(f"[INFO] Rozkład wybranych wartości k: {dict(chosen_k_counter.most_common())}")
     print(f"[INFO] Najczęściej wybierane cechy: {chosen_feat_counter.most_common(10)}")
 
-    # 6. Zapis predykcji do pliku submission.csv (format identyczny z task.csv)
     submission_df = task_df.copy()
     submission_df["rating"] = [
         predictions_map.get(int(r_id), 3) for r_id in submission_df["id"]
@@ -848,7 +889,6 @@ def main():
     submission_df.to_csv(args.submission_file, sep=";", header=False, index=False)
     print(f"[INFO] Zapisano wynikowy plik predykcji: {args.submission_file}")
 
-    # 7. Utworzenie archiwum code.zip z kodem oraz surowym plikiem cech
     script_path = os.path.abspath(__file__) if "__file__" in globals() else "solution.py"
     create_code_zip(
         args.zip_file,
@@ -859,70 +899,6 @@ def main():
         ],
     )
 
-def evaluate_validation_accuracy(
-    train_df: pd.DataFrame,
-    movie_id_to_idx: Dict[int, int],
-    sim_matrices: Dict[str, np.ndarray],
-    n_splits: int = 5,
-    seed: int = 42,
-) -> None:
-    """
-    Przeprowadza walidację krzyżową (K-Fold CV) dla każdego użytkownika osobno.
-    Dla każdego foldu trenuje model (Filter + Wrapper SFS + dobór k) wyłącznie
-    na części treningowej i mierzy Accuracy na odłożonej części testowej.
-    """
-    rng = np.random.default_rng(seed)
-    all_true: List[int] = []
-    all_pred: List[int] = []
-    all_baseline_mode: List[int] = []
-
-    t0 = time.time()
-    print(f"\n[WALIDACJA] Uruchamianie {n_splits}-krotnej walidacji krzyżowej dla 358 użytkowników...")
-
-    for user_id, user_group in train_df.groupby("user_id"):
-        m_indices = np.array([movie_id_to_idx[int(m)] for m in user_group["movie_id"]], dtype=int)
-        ratings = user_group["rating"].to_numpy(dtype=int)
-
-        # Losowa permutacja 90 filmów użytkownika i podział na n_splits części
-        perm = rng.permutation(len(ratings))
-        folds = np.array_split(perm, n_splits)
-
-        for fold_idx in range(n_splits):
-            val_pos = folds[fold_idx]
-            train_pos = np.concatenate([folds[i] for i in range(n_splits) if i != fold_idx])
-
-            # Trening klasyfikatora tylko na części treningowej
-            clf = UserKNNClassifier(user_id=int(user_id))
-            clf.fit(m_indices[train_pos], ratings[train_pos], sim_matrices)
-
-            # Predykcja na niewidzianej części walidacyjnej
-            preds = clf.predict(m_indices[val_pos], sim_matrices)
-
-            # Dominanta z części treningowej jako punkt odniesienia (baseline)
-            vals, counts = np.unique(ratings[train_pos], return_counts=True)
-            mode_val = int(vals[np.argmax(counts)])
-
-            all_true.extend(ratings[val_pos].tolist())
-            all_pred.extend(preds.tolist())
-            all_baseline_mode.extend([mode_val] * len(val_pos))
-
-    y_true = np.array(all_true, dtype=int)
-    y_pred = np.array(all_pred, dtype=int)
-    y_base = np.array(all_baseline_mode, dtype=int)
-
-    acc_exact = np.mean(y_pred == y_true)
-    acc_base = np.mean(y_base == y_true)
-    acc_within_1 = np.mean(np.abs(y_pred - y_true) <= 1)
-    mae = np.mean(np.abs(y_pred - y_true))
-
-    print("=" * 65)
-    print(f"WYNIKI WALIDACJI KRZYŻOWEJ ({n_splits}-Fold CV, łącznie {len(y_true)} ocen):")
-    print(f" -> Accuracy dokładne (y_pred == y_true): {acc_exact * 100:.2f}% (Baseline mody: {acc_base * 100:.2f}%)")
-    print(f" -> Accuracy +/- 1 gwiazdka (|err| <= 1): {acc_within_1 * 100:.2f}%")
-    print(f" -> Średni błąd bezwzględny (MAE):        {mae:.4f}")
-    print(f" -> Czas walidacji:                       {time.time() - t0:.2f} s")
-    print("=" * 65 + "\n")
 
 if __name__ == "__main__":
-
     main()
