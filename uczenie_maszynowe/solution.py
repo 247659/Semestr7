@@ -21,15 +21,15 @@ def main() -> None:
     args = parser.parse_args()
 
     movies_df = pd.read_csv(
-        args.movie_file, sep=";", header=None, names=["movie_id", "tmdb_id", "title"],
+        "movie.csv", sep=";", header=None, names=["movie_id", "tmdb_id", "title"],
         dtype={"movie_id": "Int64", "tmdb_id": "Int64"},
     )
     train_df = pd.read_csv(
-        args.train_file, sep=";", header=None, names=["id", "user_id", "movie_id", "rating"],
+        "train.csv", sep=";", header=None, names=["id", "user_id", "movie_id", "rating"],
         na_values=["NULL", "null", ""],
     )
     task_df = pd.read_csv(
-        args.task_file, sep=";", header=None, names=["id", "user_id", "movie_id", "rating"],
+        "task.csv", sep=";", header=None, names=["id", "user_id", "movie_id", "rating"],
         na_values=["NULL", "null", ""],
     )
 
@@ -42,7 +42,7 @@ def main() -> None:
     missing_task_df = task_df.loc[task_df["rating"].isna()].copy()
     print(
         f"[INFO] Wczytano {len(movies_df)} filmów, {len(train_df)} ocen treningowych "
-        f"({train_df['user_id'].nunique()} użytkowników), {len(task_df)} wierszy task, "
+        f"({train_df['user_id'].nunique()} użytkowników), {len(task_df)} wierszy task "
     )
 
     raw_client = TMDBRawClient(
@@ -84,7 +84,6 @@ def main() -> None:
             train_y = user_train["rating"].to_numpy(dtype=int)
             clf = UserKNNClassifier(
                 user_id=user_id,
-                max_selected_features=args.max_selected_features,
                 aggregation=best_aggregation,
                 loss_name=best_loss,
             )
@@ -111,14 +110,10 @@ def main() -> None:
     submission_df["rating"] = pd.to_numeric(submission_df["rating"], errors="raise").astype(int)
     if not submission_df["rating"].between(0, 5).all():
         raise RuntimeError("Predykcje poza dopuszczalnym zakresem 0..5.")
-    submission_df.to_csv(args.submission_file, sep=";", header=False, index=False)
+    submission_df.to_csv("submission.csv", sep=";", header=False, index=False)
 
-    print(f"[INFO] Zapisano submission: {args.submission_file}")
-    print(f"[INFO] Finalny trening/predykcja: {time.time() - start:.2f} s")
     print(f"[INFO] Rozkład wybranego k: {dict(chosen_k_counter.most_common())}")
     print(f"[INFO] Najczęściej wybierane cechy: {chosen_feat_counter.most_common(10)}")
-    if cv_losses:
-        print(f"[INFO] Średni najlepszy wewnętrzny LOOCV loss: {float(np.mean(cv_losses)):.4f}")
 
 
 if __name__ == "__main__":
