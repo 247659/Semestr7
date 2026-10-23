@@ -1,5 +1,3 @@
-"""Główny skrypt uruchomieniowy generujący submission.csv oraz code.zip."""
-
 import time
 import argparse
 from collections import Counter

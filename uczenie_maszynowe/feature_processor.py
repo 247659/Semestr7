@@ -28,6 +28,7 @@ class RawFeatureProcessor:
             if val is None or key in cls.IGNORED_RAW_KEYS:
                 continue
 
+            # Cechy liczbowe
             if isinstance(val, (int, float)) and not isinstance(val, bool):
                 val_float = float(val)
                 if key in cls.LOG_TRANSFORM_KEYS:
@@ -35,12 +36,14 @@ class RawFeatureProcessor:
                 else:
                     features[f"num_{key}"] = val_float if val_float > 0 else np.nan
 
+            # Rok premiery
             elif key == "release_date" and isinstance(val, str):
                 if len(val) >= 4 and val[:4].isdigit():
                     features["num_release_year"] = float(val[:4])
                 else:
                     features["num_release_year"] = np.nan
 
+            # Ekstrakcja cech obiektowych
             elif key == "genres" and isinstance(val, list):
                 extracted = {
                     str(item["name"]).strip().lower()
@@ -84,24 +87,27 @@ class RawFeatureProcessor:
 
         credits_data = raw.get("credits")
         if isinstance(credits_data, dict):
+            # Top 5 aktorów
             cast_raw = credits_data.get("cast") or []
             cast_set = {
-                str(c["name"]).strip().lower()
+                str(c["id"]).strip()
                 for c in cast_raw[:5]
-                if isinstance(c, dict) and c.get("name")
+                if isinstance(c, dict) and c.get("id") is not None
             }
             if cast_set:
                 features["set_cast"] = cast_set
 
+            # reżyserzy
             crew_raw = credits_data.get("crew") or []
             directors_set = {
-                str(m["name"]).strip().lower()
+                str(m["id"]).strip()
                 for m in crew_raw
-                if isinstance(m, dict) and m.get("name") and m.get("job") == "Director"
+                if isinstance(m, dict) and m.get("id") is not None and m.get("job") == "Director"
             }
             if directors_set:
                 features["set_director"] = directors_set
 
+        # Słowa kluczowe
         kw_data = raw.get("keywords")
         if isinstance(kw_data, dict):
             kw_list = kw_data.get("keywords") or []
@@ -113,6 +119,7 @@ class RawFeatureProcessor:
             if kw_set:
                 features["set_keywords"] = kw_set
 
+        # Cechy kategoryczne: język oraz kolekcja
         orig_lang = raw.get("original_language")
         if orig_lang and isinstance(orig_lang, str):
             features["cat_original_language"] = orig_lang.strip().lower()
@@ -121,11 +128,14 @@ class RawFeatureProcessor:
         if isinstance(collection, dict) and collection.get("name"):
             features["cat_belongs_to_collection"] = str(collection["name"]).strip().lower()
 
+        # tagline oraz overview
         tagline = (raw.get("tagline") or "").strip()
+        if tagline:
+            features["text_tagline"] = tagline
+
         overview = (raw.get("overview") or "").strip()
-        combined_text = f"{tagline} {overview}".strip()
-        if combined_text:
-            features["text_overview"] = combined_text
+        if overview:
+            features["text_overview"] = overview
         elif fallback_title:
             features["text_overview"] = fallback_title
 
