@@ -3,10 +3,12 @@ Główny moduł wykonawczy (main.py) realizujący pełny proces:
 1. Uruchomienie testów jednostkowych i integracyjnych (pkt 6.1).
 2. Wczytanie danych movie.csv, train.csv, task.csv oraz lokalnego pliku tmdb_raw.json.
 3. Ekstrakcja i budowa macierzy cech filmów (Feature Engineering).
-4. Walidacja krzyżowa 3-Fold Per-User CV oraz porównanie hiperparametrów
-   pojedynczego drzewa decyzyjnego i lasu losowego (pkt 6.2).
+4. Walidacja krzyżowa 3-Fold Per-User CV oraz INDYWIDUALNY dobór hiperparametrów
+   oddzielnie dla każdego z 358 użytkowników (Per-User Hyperparameter Tuning)
+   na rozszerzonej siatce parametrów dla drzewa decyzyjnego i lasu losowego (pkt 6.2).
 5. Trening finalnych modeli indywidualnych dla każdego z 358 użytkowników
-   oraz wygenerowanie plików submission_tree.csv, submission_forest.csv i tree.png (pkt 6.3).
+   z użyciem jego własnych, optymalnych hiperparametrów oraz wygenerowanie plików
+   submission_tree.csv, submission_forest.csv i tree.png (pkt 6.3).
 6. Automatyczna weryfikacja końcowa wygenerowanych plików (pkt 6.4).
 """
 
@@ -17,7 +19,7 @@ from data_loader import load_csv_datasets, load_and_link_tmdb_data
 from feature_engineering import MovieFeatureEngineer
 from decision_tree import DecisionTreeClassifierCustom
 from random_forest import RandomForestClassifierCustom
-from evaluation import evaluate_per_user_cv
+from evaluation import tune_hyperparameters_per_user
 from visualization import plot_decision_tree
 from utils import (
     run_all_unit_tests,
@@ -26,11 +28,153 @@ from utils import (
 )
 
 
+def get_decision_tree_grid():
+    """
+    Zwraca rozszerzoną siatkę konfiguracji hiperparametrów dla Pojedynczego Drzewa Decyzyjnego,
+    obejmującą szeroki zakres max_depth (2, 3, 4, 5, 6, 8, 10, None), oba kryteria podziału
+    ('gini', 'entropy'), zróżnicowane wartości min_samples_split, min_samples_leaf
+    oraz min_impurity_decrease.
+    """
+    return {
+        "DT_gini_d3_leaf4": {
+            "criterion": "gini",
+            "max_depth": 3,
+            "min_samples_split": 10,
+            "min_samples_leaf": 4,
+            "min_impurity_decrease": 0.005,
+        },
+        "DT_gini_d4_leaf3": {
+            "criterion": "gini",
+            "max_depth": 4,
+            "min_samples_split": 8,
+            "min_samples_leaf": 3,
+            "min_impurity_decrease": 0.005,
+        },
+        "DT_gini_d5_leaf3": {
+            "criterion": "gini",
+            "max_depth": 5,
+            "min_samples_split": 6,
+            "min_samples_leaf": 3,
+            "min_impurity_decrease": 0.003,
+        },
+        "DT_gini_d6_leaf2": {
+            "criterion": "gini",
+            "max_depth": 6,
+            "min_samples_split": 5,
+            "min_samples_leaf": 2,
+            "min_impurity_decrease": 0.002,
+        },
+        "DT_gini_d8_leaf2": {
+            "criterion": "gini",
+            "max_depth": 8,
+            "min_samples_split": 4,
+            "min_samples_leaf": 2,
+            "min_impurity_decrease": 0.001,
+        },
+        "DT_gini_d10_leaf1": {
+            "criterion": "gini",
+            "max_depth": 10,
+            "min_samples_split": 3,
+            "min_samples_leaf": 1,
+            "min_impurity_decrease": 0.0,
+        },
+        "DT_gini_full_unconstrained": {
+            "criterion": "gini",
+            "max_depth": None,
+            "min_samples_split": 2,
+            "min_samples_leaf": 1,
+            "min_impurity_decrease": 0.0,
+        },
+    }
+
+
+def get_random_forest_grid():
+    """
+    Zwraca rozszerzoną siatkę konfiguracji hiperparametrów dla Lasu Losowego,
+    obejmującą różne głębokości drzew (max_depth: 3, 5, 8, 12, None),
+    różne liczby drzew (n_estimators: 25, 45, 65), kryteria ('gini', 'entropy'),
+    strategie doboru podzbioru cech ('sqrt', 'log2'), metody agregacji ('soft', 'hard')
+    oraz dywersyfikację hiperparametrów między drzewami (diversify_trees).
+    """
+    return {
+        "RF_25t_d3_gini_sqrt_soft": {
+            "n_estimators": 25,
+            "criterion": "gini",
+            "max_depth": 3,
+            "min_samples_split": 8,
+            "min_samples_leaf": 3,
+            "max_features": "sqrt",
+            "voting": "soft",
+            "diversify_trees": False,
+        },
+        "RF_35t_d5_gini_sqrt_soft": {
+            "n_estimators": 35,
+            "criterion": "gini",
+            "max_depth": 5,
+            "min_samples_split": 6,
+            "min_samples_leaf": 2,
+            "max_features": "sqrt",
+            "voting": "soft",
+            "diversify_trees": False,
+        },
+        "RF_45t_d8_gini_sqrt_soft": {
+            "n_estimators": 45,
+            "criterion": "gini",
+            "max_depth": 8,
+            "min_samples_split": 4,
+            "min_samples_leaf": 2,
+            "max_features": "sqrt",
+            "voting": "soft",
+            "diversify_trees": False,
+        },
+        "RF_45t_d8_gini_sqrt_hard": {
+            "n_estimators": 45,
+            "criterion": "gini",
+            "max_depth": 8,
+            "min_samples_split": 4,
+            "min_samples_leaf": 2,
+            "max_features": "sqrt",
+            "voting": "hard",
+            "diversify_trees": False,
+        },
+        "RF_45t_d8_gini_log2_soft": {
+            "n_estimators": 45,
+            "criterion": "gini",
+            "max_depth": 8,
+            "min_samples_split": 4,
+            "min_samples_leaf": 2,
+            "max_features": "log2",
+            "voting": "soft",
+            "diversify_trees": False,
+        },
+        "RF_50t_d12_gini_sqrt_soft_leaf1": {
+            "n_estimators": 50,
+            "criterion": "gini",
+            "max_depth": 12,
+            "min_samples_split": 3,
+            "min_samples_leaf": 1,
+            "max_features": "sqrt",
+            "voting": "soft",
+            "diversify_trees": False,
+        },
+        "RF_65t_full_diversified_soft": {
+            "n_estimators": 65,
+            "criterion": "gini",
+            "max_depth": None,
+            "min_samples_split": 3,
+            "min_samples_leaf": 1,
+            "max_features": "sqrt",
+            "voting": "soft",
+            "diversify_trees": True,
+        },
+    }
+
+
 def main() -> None:
     start_time = time.time()
-    print("=" * 75)
-    print("ETAP 2: SYSTEM REKOMENDACJI FILMÓW (DECISION TREE & RANDOM FOREST)")
-    print("=" * 75)
+    print("=" * 80)
+    print("ETAP 2: SYSTEM REKOMENDACJI FILMÓW (PER-USER HYPERPARAMETER TUNING)")
+    print("=" * 80)
 
     # -------------------------------------------------------------------------
     # KROK 1: Testy jednostkowe (pkt 6.1)
@@ -63,119 +207,93 @@ def main() -> None:
     )
 
     # -------------------------------------------------------------------------
-    # KROK 3: Walidacja krzyżowa 3-Fold CV per użytkownik (pkt 6.2)
+    # KROK 3: Walidacja krzyżowa 3-Fold CV i dobór hiperparametrów PER UŻYTKOWNIK
     # -------------------------------------------------------------------------
-    print("\n[3/6] Przeprowadzanie walidacji krzyżowej 3-Fold CV (358 użytkowników)...")
+    print("\n[3/6] Indywidualny dobór hiperparametrów (3-Fold CV) dla każdego z 358 użytkowników...")
 
-    tree_configs = {
-        "DT_gini_depth4": {
-            "criterion": "gini",
-            "max_depth": 4,
-            "min_samples_split": 8,
-            "min_samples_leaf": 3,
-            "min_impurity_decrease": 0.005,
-        },
-        "DT_entropy_depth4": {
-            "criterion": "entropy",
-            "max_depth": 4,
-            "min_samples_split": 8,
-            "min_samples_leaf": 3,
-            "min_impurity_decrease": 0.005,
-        },
-        "DT_gini_depth6": {
-            "criterion": "gini",
-            "max_depth": 6,
-            "min_samples_split": 5,
-            "min_samples_leaf": 2,
-            "min_impurity_decrease": 0.002,
-        },
-    }
+    tree_configs = get_decision_tree_grid()
+    forest_configs = get_random_forest_grid()
 
-    forest_configs = {
-        "RF_50trees_soft": {
-            "n_estimators": 50,
-            "criterion": "gini",
-            "max_depth": 8,
-            "min_samples_split": 4,
-            "min_samples_leaf": 2,
-            "max_features": "sqrt",
-            "voting": "soft",
-        },
-        "RF_50trees_hard": {
-            "n_estimators": 50,
-            "criterion": "gini",
-            "max_depth": 8,
-            "min_samples_split": 4,
-            "min_samples_leaf": 2,
-            "max_features": "sqrt",
-            "voting": "hard",
-        },
-    }
+    print(f"\n  --- A. Testowanie {len(tree_configs)} konfiguracji Drzewa Decyzyjnego ---")
+    tree_tuning = tune_hyperparameters_per_user(
+        train_df=train_df,
+        X_movies=X_movies,
+        movie_id_to_row=movie_id_to_row,
+        feature_names=feature_names,
+        is_binary_feature=is_binary_feature,
+        model_type="tree",
+        configs_grid=tree_configs,
+        n_splits=3,
+        random_state=42,
+    )
 
-    best_tree_name, best_tree_res = None, None
-    for name, params in tree_configs.items():
-        res = evaluate_per_user_cv(
-            train_df,
-            X_movies,
-            movie_id_to_row,
-            feature_names,
-            is_binary_feature,
-            model_type="tree",
-            model_params=params,
-            n_splits=3,
-            random_state=42,
-        )
+    for cfg_name, res in tree_tuning["per_config_summaries"].items():
         print(
-            f"  [Tree: {name}] Global Acc: {res['global_accuracy']:.4f} | "
+            f"    [{cfg_name:<26}] Global Acc: {res['global_accuracy']:.4f} | "
             f"Weighted F1: {res['global_weighted_f1']:.4f} | "
-            f"Macro F1: {res['global_macro_f1']:.4f} | MAE: {res['global_mae']:.4f} | "
-            f"User Acc (mean±std): {res['mean_user_accuracy']:.4f}±{res['std_user_accuracy']:.4f}"
+            f"Macro F1: {res['global_macro_f1']:.4f} | MAE: {res['global_mae']:.4f}"
         )
-        if (
-            best_tree_res is None
-            or res["global_weighted_f1"] > best_tree_res["global_weighted_f1"]
-        ):
-            best_tree_name, best_tree_res = name, res
 
-    best_forest_name, best_forest_res = None, None
-    for name, params in forest_configs.items():
-        res = evaluate_per_user_cv(
-            train_df,
-            X_movies,
-            movie_id_to_row,
-            feature_names,
-            is_binary_feature,
-            model_type="forest",
-            model_params=params,
-            n_splits=3,
-            random_state=42,
-        )
+    t_glob = tree_tuning["best_global_summary"]
+    t_pers = tree_tuning["personalized_metrics"]
+    print("\n  Podsumowanie doboru hiperparametrów Drzewa Decyzyjnego:")
+    print(
+        f"    * Najlepsza pojedyncza konfiguracja globalna ({tree_tuning['best_global_config_name']}): "
+        f"Acc = {t_glob['global_accuracy']:.4f}, Weighted F1 = {t_glob['global_weighted_f1']:.4f}, MAE = {t_glob['global_mae']:.4f}"
+    )
+    print(
+        f"    * Dobór INDYWIDUALNY per użytkownik (Per-User Tuned DT): "
+        f"Acc = {t_pers['global_accuracy']:.4f}, Weighted F1 = {t_pers['global_weighted_f1']:.4f}, "
+        f"Macro F1 = {t_pers['global_macro_f1']:.4f}, MAE = {t_pers['global_mae']:.4f}"
+    )
+    print(f"    * Rozkład wybranych konfiguracji drzewa wśród 358 użytkowników: {tree_tuning['config_selection_counts']}")
+    print("    * Macierz pomyłek (Confusion Matrix 6x6) dla Per-User Tuned Decision Tree:")
+    print(t_pers["confusion_matrix"])
+
+    print(f"\n  --- B. Testowanie {len(forest_configs)} konfiguracji Lasu Losowego ---")
+    forest_tuning = tune_hyperparameters_per_user(
+        train_df=train_df,
+        X_movies=X_movies,
+        movie_id_to_row=movie_id_to_row,
+        feature_names=feature_names,
+        is_binary_feature=is_binary_feature,
+        model_type="forest",
+        configs_grid=forest_configs,
+        n_splits=3,
+        random_state=42,
+    )
+
+    for cfg_name, res in forest_tuning["per_config_summaries"].items():
         print(
-            f"  [Forest: {name}] Global Acc: {res['global_accuracy']:.4f} | "
+            f"    [{cfg_name:<31}] Global Acc: {res['global_accuracy']:.4f} | "
             f"Weighted F1: {res['global_weighted_f1']:.4f} | "
-            f"Macro F1: {res['global_macro_f1']:.4f} | MAE: {res['global_mae']:.4f} | "
-            f"User Acc (mean±std): {res['mean_user_accuracy']:.4f}±{res['std_user_accuracy']:.4f}"
+            f"Macro F1: {res['global_macro_f1']:.4f} | MAE: {res['global_mae']:.4f}"
         )
-        if (
-            best_forest_res is None
-            or res["global_weighted_f1"] > best_forest_res["global_weighted_f1"]
-        ):
-            best_forest_name, best_forest_res = name, res
 
-    print(f"\n  Najlepsza konfiguracja Drzewa Decyzyjnego: {best_tree_name}")
-    print("  Macierz pomyłek (Confusion Matrix 6x6 - wiersze: true, kolumny: pred):")
-    print(best_tree_res["confusion_matrix"])
-
-    print(f"\n  Najlepsza konfiguracja Lasu Losowego: {best_forest_name}")
-    print("  Macierz pomyłek (Confusion Matrix 6x6 - wiersze: true, kolumny: pred):")
-    print(best_forest_res["confusion_matrix"])
+    f_glob = forest_tuning["best_global_summary"]
+    f_pers = forest_tuning["personalized_metrics"]
+    print("\n  Podsumowanie doboru hiperparametrów Lasu Losowego:")
+    print(
+        f"    * Najlepsza pojedyncza konfiguracja globalna ({forest_tuning['best_global_config_name']}): "
+        f"Acc = {f_glob['global_accuracy']:.4f}, Weighted F1 = {f_glob['global_weighted_f1']:.4f}, MAE = {f_glob['global_mae']:.4f}"
+    )
+    print(
+        f"    * Dobór INDYWIDUALNY per użytkownik (Per-User Tuned RF): "
+        f"Acc = {f_pers['global_accuracy']:.4f}, Weighted F1 = {f_pers['global_weighted_f1']:.4f}, "
+        f"Macro F1 = {f_pers['global_macro_f1']:.4f}, MAE = {f_pers['global_mae']:.4f}"
+    )
+    print(f"    * Rozkład wybranych konfiguracji lasu wśród 358 użytkowników: {forest_tuning['config_selection_counts']}")
+    print("    * Macierz pomyłek (Confusion Matrix 6x6) dla Per-User Tuned Random Forest:")
+    print(f_pers["confusion_matrix"])
 
     # -------------------------------------------------------------------------
-    # KROK 4: Trening finalnych modeli per użytkownik i predykcja task.csv (pkt 6.3)
+    # KROK 4: Trening finalnych modeli z indywidualnymi hiperparametrami (pkt 6.3)
     # -------------------------------------------------------------------------
-    print("\n[4/6] Trenowanie finalnych modeli na pełnym zbiorze train.csv i predykcja task.csv...")
-    final_tree_params = tree_configs[best_tree_name]
-    final_forest_params = forest_configs[best_forest_name]
+    print("\n[4/6] Trenowanie finalnych modeli (z indywidualnymi hiperparametrami każdego użytkownika) i predykcja task.csv...")
+    best_tree_params_per_user = tree_tuning["best_params_per_user"]
+    best_forest_params_per_user = forest_tuning["best_params_per_user"]
+    default_tree_params = tree_configs[tree_tuning["best_global_config_name"]]
+    default_forest_params = forest_configs[forest_tuning["best_global_config_name"]]
 
     preds_tree_all = np.zeros(len(task_df), dtype=np.int64)
     preds_forest_all = np.zeros(len(task_df), dtype=np.int64)
@@ -198,8 +316,12 @@ def main() -> None:
             y_train_u = tr_grp["rating"].to_numpy(dtype=np.int64)
             X_train_u = X_movies[[movie_id_to_row[int(m)] for m in tr_movie_ids]]
 
+            # Pobieramy optymalne hiperparametry wyznaczone specjalnie dla użytkownika u_id
+            u_tree_params = best_tree_params_per_user.get(u_id, default_tree_params)
+            u_forest_params = best_forest_params_per_user.get(u_id, default_forest_params)
+
             tree_clf = DecisionTreeClassifierCustom(
-                random_state=42 + u_id, **final_tree_params
+                random_state=42 + u_id, **u_tree_params
             )
             tree_clf.fit(X_train_u, y_train_u, feature_names, is_binary_feature)
             preds_tree_all[task_indices] = tree_clf.predict(X_test_u)
@@ -208,7 +330,7 @@ def main() -> None:
                 viz_tree_model = tree_clf
 
             forest_clf = RandomForestClassifierCustom(
-                random_state=1000 + u_id, **final_forest_params
+                random_state=1000 + u_id, **u_forest_params
             )
             forest_clf.fit(X_train_u, y_train_u, feature_names, is_binary_feature)
             preds_forest_all[task_indices] = forest_clf.predict(X_test_u)
@@ -223,7 +345,11 @@ def main() -> None:
     # -------------------------------------------------------------------------
     # KROK 5: Wizualizacja drzewa decyzyjnego (tree.png)
     # -------------------------------------------------------------------------
-    print(f"\n[5/6] Generowanie wizualizacji drzewa decyzyjnego (user_id={viz_user_id}) -> tree.png...")
+    chosen_viz_cfg = tree_tuning["best_config_name_per_user"].get(viz_user_id, "default")
+    print(
+        f"\n[5/6] Generowanie wizualizacji drzewa decyzyjnego "
+        f"(user_id={viz_user_id}, wybrana konfiguracja={chosen_viz_cfg}) -> tree.png..."
+    )
     plot_decision_tree(viz_tree_model, user_id=viz_user_id, output_path="tree.png")
     print("  - Zapisano plik: tree.png")
 

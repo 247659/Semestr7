@@ -30,6 +30,7 @@ class MovieFeatureEngineer:
         min_director_freq: int = 3,
         min_actor_freq: int = 4,
         min_writer_freq: int = 3,
+        min_collection_freq: int = 2
     ):
         self.reference_year = reference_year
         self.min_lang_freq = min_lang_freq
@@ -38,6 +39,7 @@ class MovieFeatureEngineer:
         self.min_director_freq = min_director_freq
         self.min_actor_freq = min_actor_freq
         self.min_writer_freq = min_writer_freq
+        self.min_collection_freq = min_collection_freq
 
         self.feature_names_: List[str] = []
         self.is_binary_feature_: np.ndarray = np.array([], dtype=bool)
@@ -68,6 +70,13 @@ class MovieFeatureEngineer:
             for g in genres_raw
             if isinstance(g, dict) and g.get("name")
         ]
+
+        # Kolekcje
+        collection_raw = rec.get("belongs_to_collection") or {}
+        if isinstance(collection_raw, dict):
+            collection_name = str(collection_raw.get("name") or "").strip()
+        else:
+            collection_name = ""
 
         # Język oryginalny i języki mówione
         orig_lang = str(rec.get("original_language") or "unknown").strip().lower()
@@ -116,9 +125,6 @@ class MovieFeatureEngineer:
         top10_actor_names = [
             str(c.get("name")).strip() for c in top10_cast if c.get("name")
         ]
-        top5_cast_pops = [float(c.get("popularity") or 0.0) for c in top5_cast]
-        top5_max_pop = max(top5_cast_pops) if top5_cast_pops else 0.0
-        top5_mean_pop = float(np.mean(top5_cast_pops)) if top5_cast_pops else 0.0
 
         # Odsetek kobiet (gender == 1 w TMDB) w top 10 obsady
         known_gender_cast = [
@@ -133,7 +139,6 @@ class MovieFeatureEngineer:
 
         # Reżyserzy i scenarzyści
         directors = []
-        director_pops = []
         writers = []
         for member in crew_raw:
             if not isinstance(member, dict):
@@ -141,22 +146,16 @@ class MovieFeatureEngineer:
             job = str(member.get("job") or "").strip().lower()
             dept = str(member.get("department") or "").strip().lower()
             name = str(member.get("name") or "").strip()
-            pop = float(member.get("popularity") or 0.0)
             if not name:
                 continue
             if job == "director":
                 directors.append(name)
-                director_pops.append(pop)
             if dept == "writing" or job in ("screenplay", "writer", "story", "author"):
                 writers.append(name)
-
-        director_max_pop = max(director_pops) if director_pops else 0.0
 
         # Tekst: overview i tagline
         overview = str(rec.get("overview") or "").strip()
         tagline = str(rec.get("tagline") or "").strip()
-        overview_len_words = float(len(overview.split())) if overview else 0.0
-        has_tagline = 1.0 if len(tagline) > 0 else 0.0
 
         return {
             "budget": budget,
@@ -167,21 +166,18 @@ class MovieFeatureEngineer:
             "vote_count": vote_count,
             "release_year": release_year,
             "genres": list(dict.fromkeys(genres)),
+            "collection_name": collection_name,
+            "belongs_to_collection": 1.0 if collection_name else 0.0,
             "orig_lang": orig_lang,
             "spoken_languages_count": float(len(spoken_raw)),
             "countries": list(dict.fromkeys(countries)),
             "companies": list(dict.fromkeys(companies)),
             "cast_count": float(len(cast_raw)),
             "crew_count": float(len(crew_raw)),
-            "top5_cast_max_pop": top5_max_pop,
-            "top5_cast_mean_pop": top5_mean_pop,
-            "director_pop": director_max_pop,
             "female_cast_ratio": float(female_ratio),
             "top10_actors": list(dict.fromkeys(top10_actor_names)),
             "directors": list(dict.fromkeys(directors)),
             "writers": list(dict.fromkeys(writers)),
-            "overview_len_words": overview_len_words,
-            "has_tagline": has_tagline,
         }
 
     def fit_transform(
@@ -226,6 +222,7 @@ class MovieFeatureEngineer:
 
         # Zliczanie częstości kategorii w zbiorze 200 filmów
         genre_counter = Counter()
+        collection_counter = Counter()
         lang_counter = Counter()
         country_counter = Counter()
         company_counter = Counter()
@@ -235,6 +232,7 @@ class MovieFeatureEngineer:
 
         for p in parsed_list:
             genre_counter.update(p["genres"])
+            collection_counter.update(p["collection_name"])
             lang_counter[p["orig_lang"]] += 1   # TODO DLACZEGO TU JEST +=1
             country_counter.update(p["countries"])
             company_counter.update(p["companies"])
@@ -243,6 +241,9 @@ class MovieFeatureEngineer:
             writer_counter.update(p["writers"])
 
         selected_genres = sorted(genre_counter.keys())
+        selected_collections = sorted(
+            [name for name, count in collection_counter.items() if count >= self.min_collection_freq]
+        )
         selected_langs = sorted(
             [k for k, v in lang_counter.items() if v >= self.min_lang_freq and k != "unknown"]
         )
@@ -270,21 +271,15 @@ class MovieFeatureEngineer:
         num_a_features = [
             ("budget_log", False),
             ("revenue_log", False),
-            ("roi_ratio", False),
-            ("is_budget_known", True), # TODO PO CO TA CECHA?
-            ("is_revenue_known", True), # TODO PO CO TA CECHA?
             ("runtime", False),
             ("popularity", False),
             ("vote_average", False),
             ("vote_count_log", False),
             ("release_year", False),
-            ("movie_age", False),
         ]
-        # Grupa B: Liczba gatunków
-        num_b_features = [("genres_count", False)]  # TODO A NIE LEPIEJ JAKIE TO GATUNKI?
         # Grupa C: Liczniki produkcyjne + is_english
         num_c_features = [
-            ("is_english", True),     # TODO
+            ("is_english", True),
             ("prod_companies_count", False),
             ("prod_countries_count", False),
             ("spoken_languages_count", False),
@@ -293,23 +288,14 @@ class MovieFeatureEngineer:
         num_d_features = [
             ("cast_count", False),
             ("crew_count", False),
-            ("top5_cast_max_popularity", False),
-            ("top5_cast_mean_popularity", False),
-            ("director_popularity", False),
             ("female_cast_ratio", False),
-        ]
-        # Grupa E: Proste statystyki tekstu
-        num_e_features = [
-            ("overview_len_words", False),
-            ("has_tagline", True),
+            ("belongs_to_collection", True),
         ]
 
         base_spec = (
             num_a_features
-            + num_b_features
             + num_c_features
             + num_d_features
-            + num_e_features
         )
         for name, b_flag in base_spec:
             feature_names.append(name)
@@ -318,6 +304,16 @@ class MovieFeatureEngineer:
         # Multi-hot: Gatunki
         for g in selected_genres:
             feature_names.append(f"genre_{g.replace(' ', '_')}")
+            is_binary.append(True)
+
+        # Multi-hot: Kolekcje filmowe
+        for collection in selected_collections:
+            clean_collection = "".join(
+                ch if ch.isalnum() else "_"
+                for ch in collection
+            ).strip("_")
+
+            feature_names.append(f"collection_{clean_collection}")
             is_binary.append(True)
 
         # Multi-hot: Języki
@@ -363,8 +359,6 @@ class MovieFeatureEngineer:
         X_movies = np.zeros((M, P), dtype=np.float64)
 
         for i, p in enumerate(parsed_list):
-            is_b_known = 1.0 if p["budget"] > 0 else 0.0 # TODO PO CO TAKA CECHA
-            is_r_known = 1.0 if p["revenue"] > 0 else 0.0 # TODO PO CO TAKA CECHA
 
             b_val = p["budget"] if p["budget"] > 0 else self.medians_["budget"]
             r_val = p["revenue"] if p["revenue"] > 0 else self.medians_["revenue"]
@@ -388,40 +382,33 @@ class MovieFeatureEngineer:
 
             budget_log = float(np.log1p(b_val))
             revenue_log = float(np.log1p(r_val))
-            roi_ratio = float((r_val + 1.0) / (b_val + 1.0)) # TODO PO CO ROI
             vote_count_log = float(np.log1p(vc_val))
-            movie_age = float(self.reference_year - yr_val) # TODO PO CO JAK MAMY RELEASE YEAR
 
             row_vals: List[float] = [
                 budget_log,
                 revenue_log,
-                roi_ratio, # TODO PO CO
-                is_b_known, # TODO PO CO
-                is_r_known, # TODO PO CO
                 rt_val,
                 pop_val,
                 va_val,
                 vote_count_log,
                 yr_val,
-                movie_age, #TODO PO CO
-                float(len(p["genres"])), #TODO CZM ILOSC GATUNKOW
-                1.0 if p["orig_lang"] == "en" else 0.0, # TODO A TUTAJ O CO CHODZI
+                1.0 if p["orig_lang"] == "en" else 0.0,
                 float(len(p["companies"])),
                 float(len(p["countries"])),
                 p["spoken_languages_count"],
                 p["cast_count"],
                 p["crew_count"],
-                p["top5_cast_max_pop"], # TODO NO NW
-                p["top5_cast_mean_pop"], # TODO NO NW
-                p["director_pop"], # TODO NO NW
-                p["female_cast_ratio"], #TODO NO NW
-                p["overview_len_words"], #TODO BEZ SENSU
-                p["has_tagline"], #TODO KAZDY MA PRAWDOPODOBNIE
+                p["female_cast_ratio"],
+                p["belongs_to_collection"],
             ]
 
             g_set = set(p["genres"])
             for g in selected_genres:
                 row_vals.append(1.0 if g in g_set else 0.0)
+
+            collection_set = {p["collection_name"]} if p["collection_name"] else set()
+            for collection in selected_collections:
+                row_vals.append(1.0 if collection in collection_set else 0.0)
 
             for lg in selected_langs:
                 row_vals.append(1.0 if p["orig_lang"] == lg else 0.0)

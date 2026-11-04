@@ -24,7 +24,7 @@ class TreeNode:
         n_samples: int = 0,
         impurity: float = 0.0,
         depth: int = 0,
-        feature_idx: Optional[int] = None,
+        feature_idx: Optional[int] = None,   # Indeks kolumny (cechy $j$) w macierzy X, według której ten węzeł dzieli dane.
         feature_name: Optional[str] = None,
         threshold: Optional[float] = None,
         is_binary_feature: bool = False,
