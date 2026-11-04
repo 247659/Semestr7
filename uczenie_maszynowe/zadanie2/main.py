@@ -36,12 +36,12 @@ def get_decision_tree_grid():
     oraz min_impurity_decrease.
     """
     return {
-        "DT_gini_d3_leaf4": {
+        "DT_gini_d3_leaf5": {
             "criterion": "gini",
             "max_depth": 3,
             "min_samples_split": 10,
-            "min_samples_leaf": 4,
-            "min_impurity_decrease": 0.005,
+            "min_samples_leaf": 5,
+            "min_impurity_decrease": 0.0,
         },
         "DT_gini_d4_leaf3": {
             "criterion": "gini",
@@ -50,12 +50,28 @@ def get_decision_tree_grid():
             "min_samples_leaf": 3,
             "min_impurity_decrease": 0.005,
         },
+        # Sprawdzenie, czy mniejszy próg gain daje lepsze wyniki
+        "DT_gini_d4_leaf3_gain001": {
+            "criterion": "gini",
+            "max_depth": 4,
+            "min_samples_split": 6,
+            "min_samples_leaf": 3,
+            "min_impurity_decrease": 0.001,
+        },
         "DT_gini_d5_leaf3": {
             "criterion": "gini",
             "max_depth": 5,
             "min_samples_split": 6,
             "min_samples_leaf": 3,
             "min_impurity_decrease": 0.003,
+        },
+        # Sprawdzenie większego ograniczenia liści
+        "DT_gini_d5_leaf5": {
+            "criterion": "gini",
+            "max_depth": 5,
+            "min_samples_split": 10,
+            "min_samples_leaf": 5,
+            "min_impurity_decrease": 0.0,
         },
         "DT_gini_d6_leaf2": {
             "criterion": "gini",
@@ -64,6 +80,14 @@ def get_decision_tree_grid():
             "min_samples_leaf": 2,
             "min_impurity_decrease": 0.002,
         },
+        # Drzewo o średniej głębokości bez progu gain
+        "DT_gini_d6_leaf3": {
+            "criterion": "gini",
+            "max_depth": 6,
+            "min_samples_split": 6,
+            "min_samples_leaf": 3,
+            "min_impurity_decrease": 0.0,
+        },
         "DT_gini_d8_leaf2": {
             "criterion": "gini",
             "max_depth": 8,
@@ -71,12 +95,26 @@ def get_decision_tree_grid():
             "min_samples_leaf": 2,
             "min_impurity_decrease": 0.001,
         },
+        "DT_gini_d8_leaf4": {
+            "criterion": "gini",
+            "max_depth": 8,
+            "min_samples_split": 8,
+            "min_samples_leaf": 4,
+            "min_impurity_decrease": 0.0,
+        },
         "DT_gini_d10_leaf1": {
             "criterion": "gini",
             "max_depth": 10,
             "min_samples_split": 3,
             "min_samples_leaf": 1,
             "min_impurity_decrease": 0.0,
+        },
+        "DT_gini_d10_leaf2_gain001": {
+            "criterion": "gini",
+            "max_depth": 10,
+            "min_samples_split": 4,
+            "min_samples_leaf": 2,
+            "min_impurity_decrease": 0.001,
         },
         "DT_gini_full_unconstrained": {
             "criterion": "gini",
@@ -97,16 +135,6 @@ def get_random_forest_grid():
     oraz dywersyfikację hiperparametrów między drzewami (diversify_trees).
     """
     return {
-        "RF_25t_d3_gini_sqrt_soft": {
-            "n_estimators": 25,
-            "criterion": "gini",
-            "max_depth": 3,
-            "min_samples_split": 8,
-            "min_samples_leaf": 3,
-            "max_features": "sqrt",
-            "voting": "soft",
-            "diversify_trees": False,
-        },
         "RF_35t_d5_gini_sqrt_soft": {
             "n_estimators": 35,
             "criterion": "gini",
