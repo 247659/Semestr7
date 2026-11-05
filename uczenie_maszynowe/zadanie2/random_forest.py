@@ -1,26 +1,9 @@
-"""
-Własna implementacja Lasu Losowego (RandomForestClassifierCustom)
-wykorzystująca wyłącznie własną klasę DecisionTreeClassifierCustom.
-
-Zapewnia różnorodność drzew poprzez:
-1. Bootstrap sampling (losowanie próbek ze zwracaniem dla każdego drzewa).
-2. Losowy podzbiór cech rozpatrywany w każdym węźle (max_features='sqrt').
-3. Opcjonalną dywersyfikację hiperparametrów między drzewami.
-
-Obsługuje dwa warianty agregacji:
-- 'soft': uśrednianie wektorów prawdopodobieństw klas po wszystkich drzewach.
-- 'hard': głosowanie większościowe po przewidywanych klasach.
-"""
-
 import numpy as np
 from typing import Optional, List, Union
 from decision_tree import DecisionTreeClassifierCustom
 
 
 class RandomForestClassifierCustom:
-    """
-    Zespół (ensemble) binarnych drzew decyzyjnych dla klasyfikacji wieloklasowej 0..5.
-    """
 
     def __init__(
         self,
@@ -60,7 +43,6 @@ class RandomForestClassifierCustom:
         self.rng_ = np.random.default_rng(random_state)
 
     def _resolve_tie(self, scores_vec: np.ndarray) -> int:
-        """Rozstrzyga ewentualne remisy w zagregowanym wyniku na korzyść rozkładu a priori użytkownika."""
         max_val = np.max(scores_vec)
         candidates = np.flatnonzero(np.isclose(scores_vec, max_val, atol=1e-12))
         if len(candidates) == 1:
@@ -84,7 +66,6 @@ class RandomForestClassifierCustom:
         feature_names: Optional[List[str]] = None,
         is_binary_feature: Optional[np.ndarray] = None,
     ) -> "RandomForestClassifierCustom":
-        """Trenuje zespół n_estimators drzew decyzyjnych."""
         X_arr = np.asarray(X, dtype=np.float64)
         y_arr = np.asarray(y, dtype=np.int64)
         n_samples = X_arr.shape[0]
@@ -118,7 +99,6 @@ class RandomForestClassifierCustom:
                 X_boot = X_arr
                 y_boot = valid_y
 
-            # Opcjonalna dywersyfikacja hiperparametrów między drzewami
             crit = self.criterion
             leaf_min = self.min_samples_leaf
             if self.diversify_trees:
@@ -137,7 +117,6 @@ class RandomForestClassifierCustom:
                 random_state=tree_seed,
             )
             tree.fit(X_boot, y_boot, feature_names, is_binary_feature)
-            # Przekazanie pełnego rozkładu a priori użytkownika do rozstrzygania remisów w liściach
             tree.user_prior_ = self.user_prior_.copy()
             tree.user_mean_rating_ = self.user_mean_rating_
             self.trees_.append(tree)
@@ -145,7 +124,6 @@ class RandomForestClassifierCustom:
         return self
 
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
-        """Zwraca uśrednioną macierz prawdopodobieństw klas o wymiarach (N, 6)."""
         if not self.trees_:
             raise RuntimeError("Las losowy nie został wytrenowany. Wywołaj najpierw fit().")
         X_arr = np.asarray(X, dtype=np.float64)
@@ -155,7 +133,6 @@ class RandomForestClassifierCustom:
         return total_probs / float(len(self.trees_))
 
     def predict(self, X: np.ndarray) -> np.ndarray:
-        """Zwraca wektor przewidywanych klas całkowitych {0, 1, 2, 3, 4, 5}."""
         if not self.trees_:
             raise RuntimeError("Las losowy nie został wytrenowany. Wywołaj najpierw fit().")
         X_arr = np.asarray(X, dtype=np.float64)
@@ -167,7 +144,6 @@ class RandomForestClassifierCustom:
             for i in range(n_samples):
                 preds[i] = self._resolve_tie(avg_probs[i])
         else:
-            # Hard voting: zliczanie głosów poszczególnych drzew
             votes = np.zeros((n_samples, self.n_classes), dtype=np.float64)
             for tree in self.trees_:
                 t_preds = tree.predict(X_arr)

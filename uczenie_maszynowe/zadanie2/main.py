@@ -1,17 +1,3 @@
-"""
-Główny moduł wykonawczy (main.py) realizujący pełny proces:
-1. Uruchomienie testów jednostkowych i integracyjnych (pkt 6.1).
-2. Wczytanie danych movie.csv, train.csv, task.csv oraz lokalnego pliku tmdb_raw.json.
-3. Ekstrakcja i budowa macierzy cech filmów (Feature Engineering).
-4. Walidacja krzyżowa 3-Fold Per-User CV oraz INDYWIDUALNY dobór hiperparametrów
-   oddzielnie dla każdego z 358 użytkowników (Per-User Hyperparameter Tuning)
-   na rozszerzonej siatce parametrów dla drzewa decyzyjnego i lasu losowego (pkt 6.2).
-5. Trening finalnych modeli indywidualnych dla każdego z 358 użytkowników
-   z użyciem jego własnych, optymalnych hiperparametrów oraz wygenerowanie plików
-   submission_tree.csv, submission_forest.csv i tree.png (pkt 6.3).
-6. Automatyczna weryfikacja końcowa wygenerowanych plików (pkt 6.4).
-"""
-
 import time
 import numpy as np
 
@@ -22,19 +8,12 @@ from random_forest import RandomForestClassifierCustom
 from evaluation import tune_hyperparameters_per_user
 from visualization import plot_decision_tree
 from utils import (
-    run_all_unit_tests,
     save_submission_file,
     verify_generated_outputs,
 )
 
 
 def get_decision_tree_grid():
-    """
-    Zwraca rozszerzoną siatkę konfiguracji hiperparametrów dla Pojedynczego Drzewa Decyzyjnego,
-    obejmującą szeroki zakres max_depth (2, 3, 4, 5, 6, 8, 10, None), oba kryteria podziału
-    ('gini', 'entropy'), zróżnicowane wartości min_samples_split, min_samples_leaf
-    oraz min_impurity_decrease.
-    """
     return {
         "DT_gini_d3_leaf5": {
             "max_depth": 3,
@@ -48,7 +27,6 @@ def get_decision_tree_grid():
             "min_samples_leaf": 3,
             "min_impurity_decrease": 0.005,
         },
-        # Sprawdzenie, czy mniejszy próg gain daje lepsze wyniki
         "DT_gini_d4_leaf3_gain001": {
             "max_depth": 4,
             "min_samples_split": 6,
@@ -61,7 +39,6 @@ def get_decision_tree_grid():
             "min_samples_leaf": 3,
             "min_impurity_decrease": 0.003,
         },
-        # Sprawdzenie większego ograniczenia liści
         "DT_gini_d5_leaf5": {
             "max_depth": 5,
             "min_samples_split": 10,
@@ -74,7 +51,6 @@ def get_decision_tree_grid():
             "min_samples_leaf": 2,
             "min_impurity_decrease": 0.002,
         },
-        # Drzewo o średniej głębokości bez progu gain
         "DT_gini_d6_leaf3": {
             "max_depth": 6,
             "min_samples_split": 6,
@@ -115,13 +91,6 @@ def get_decision_tree_grid():
 
 
 def get_random_forest_grid():
-    """
-    Zwraca rozszerzoną siatkę konfiguracji hiperparametrów dla Lasu Losowego,
-    obejmującą różne głębokości drzew (max_depth: 3, 5, 8, 12, None),
-    różne liczby drzew (n_estimators: 25, 45, 65), kryteria ('gini', 'entropy'),
-    strategie doboru podzbioru cech ('sqrt', 'log2'), metody agregacji ('soft', 'hard')
-    oraz dywersyfikację hiperparametrów między drzewami (diversify_trees).
-    """
     return {
         "RF_35t_d5_gini_sqrt_soft": {
             "n_estimators": 35,
@@ -200,22 +169,11 @@ def get_random_forest_grid():
 
 def main() -> None:
     start_time = time.time()
-    print("=" * 80)
-    print("ETAP 2: SYSTEM REKOMENDACJI FILMÓW (PER-USER HYPERPARAMETER TUNING)")
-    print("=" * 80)
 
     # -------------------------------------------------------------------------
-    # KROK 1: Testy jednostkowe (pkt 6.1)
+    # KROK 1: Wczytanie danych i budowa macierzy cech z tmdb_raw.json
     # -------------------------------------------------------------------------
-    print("\n[1/6] Uruchamianie testów jednostkowych i integracyjnych...")
-    test_results = run_all_unit_tests()
-    for test_name, passed in test_results.items():
-        print(f"  - {test_name}: {'PASSED' if passed else 'FAILED'}")
-
-    # -------------------------------------------------------------------------
-    # KROK 2: Wczytanie danych i budowa macierzy cech z tmdb_raw.json
-    # -------------------------------------------------------------------------
-    print("\n[2/6] Wczytywanie plików CSV oraz lokalnego pliku tmdb_raw.json...")
+    print("\n[1/5] Wczytywanie plików CSV oraz lokalnego pliku tmdb_raw.json...")
     movies_df, train_df, task_df = load_csv_datasets(
         "movie.csv", "train.csv", "task.csv"
     )
@@ -231,13 +189,12 @@ def main() -> None:
     )
     print(
         f"  - Wymiar macierzy cech X_movies: {X_movies.shape} "
-        f"(cechy ciągłe: {(~is_binary_feature).sum()}, cechy binarne: {is_binary_feature.sum()})"
     )
 
     # -------------------------------------------------------------------------
-    # KROK 3: Walidacja krzyżowa 3-Fold CV i dobór hiperparametrów PER UŻYTKOWNIK
+    # KROK 2: Walidacja krzyżowa 3-Fold CV i dobór hiperparametrów PER UŻYTKOWNIK
     # -------------------------------------------------------------------------
-    print("\n[3/6] Indywidualny dobór hiperparametrów (3-Fold CV) dla każdego z 358 użytkowników...")
+    print("\n[2/5] Indywidualny dobór hiperparametrów (3-Fold CV) dla każdego z 358 użytkowników...")
 
     tree_configs = get_decision_tree_grid()
     forest_configs = get_random_forest_grid()
@@ -275,10 +232,10 @@ def main() -> None:
     )
 
     # -------------------------------------------------------------------------
-    # KROK 4: Trening finalnych modeli z indywidualnymi hiperparametrami (pkt 6.3)
+    # KROK 3: Trening finalnych modeli z indywidualnymi hiperparametrami (pkt 6.3)
     # -------------------------------------------------------------------------
     print(
-        "\n[4/6] Trenowanie finalnych modeli (z indywidualnymi hiperparametrami każdego użytkownika) i predykcja task.csv...")
+        "\n[3/5] Trenowanie finalnych modeli (z indywidualnymi hiperparametrami każdego użytkownika) i predykcja task.csv...")
     best_tree_params_per_user = tree_tuning["best_params_per_user"]
     best_forest_params_per_user = forest_tuning["best_params_per_user"]
     default_tree_params = tree_configs[tree_tuning["default_config_name"]]
@@ -305,7 +262,6 @@ def main() -> None:
             y_train_u = tr_grp["rating"].to_numpy(dtype=np.int64)
             X_train_u = X_movies[[movie_id_to_row[int(m)] for m in tr_movie_ids]]
 
-            # Pobieramy optymalne hiperparametry wyznaczone specjalnie dla użytkownika u_id
             u_tree_params = best_tree_params_per_user.get(u_id, default_tree_params)
             u_forest_params = best_forest_params_per_user.get(u_id, default_forest_params)
 
@@ -332,11 +288,11 @@ def main() -> None:
     print("  - Zapisano pliki: submission_tree.csv oraz submission_forest.csv")
 
     # -------------------------------------------------------------------------
-    # KROK 5: Wizualizacja drzewa decyzyjnego (tree.png)
+    # KROK 4: Wizualizacja drzewa decyzyjnego
     # -------------------------------------------------------------------------
     chosen_viz_cfg = tree_tuning["best_config_name_per_user"].get(viz_user_id, "default")
     print(
-        f"\n[5/6] Generowanie wizualizacji drzewa decyzyjnego "
+        f"\n[4/5] Generowanie wizualizacji drzewa decyzyjnego "
         f"(user_id={viz_user_id}, wybrana konfiguracja={chosen_viz_cfg}) -> tree.png..."
     )
     plot_decision_tree(viz_tree_model, user_id=viz_user_id, output_path="tree.png")

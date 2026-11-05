@@ -1,19 +1,8 @@
-"""
-Własna implementacja Binarnego Drzewa Decyzyjnego (DecisionTreeClassifierCustom)
-dla wieloklasowej klasyfikacji ocen filmów w skali 0..5.
-
-Nie korzysta z żadnych gotowych implementacji drzew decyzyjnych (np. scikit-learn).
-Obsługuje kryteria Gini Impurity oraz Entropy (Information Gain), wektoryzowane
-przeszukiwanie progów podziału w NumPy, cechy binarne i ciągłe oraz deterministyczne
-rozstrzyganie remisów w liściach w oparciu o rozkład a priori użytkownika.
-"""
-
 import numpy as np
 from typing import Optional, List, Union, Tuple
 
 
 class TreeNode:
-    """Reprezentacja pojedynczego węzła lub liścia w binarnym drzewie decyzyjnym."""
 
     def __init__(
         self,
@@ -57,9 +46,6 @@ class TreeNode:
 
 
 class DecisionTreeClassifierCustom:
-    """
-    Binarny klasyfikator drzewa decyzyjnego dla 6 klas ocen {0, 1, 2, 3, 4, 5}.
-    """
 
     def __init__(
         self,
@@ -92,7 +78,6 @@ class DecisionTreeClassifierCustom:
 
     @staticmethod
     def compute_gini(class_counts: np.ndarray) -> float:
-        """Oblicza wskaźnik nieczystości Giniego: Gini(S) = 1 - sum(p_k^2)."""
         total = float(np.sum(class_counts))
         if total <= 0.0:
             return 0.0
@@ -105,48 +90,33 @@ class DecisionTreeClassifierCustom:
     def _compute_vectorized_impurity(
         self, counts_matrix: np.ndarray, totals: np.ndarray
     ) -> np.ndarray:
-        """
-        Wektoryzowane obliczanie nieczystości dla wielu podziałów jednocześnie.
-        counts_matrix: kształt (T, n_classes)
-        totals: kształt (T, 1)
-        """
         probs = counts_matrix / np.maximum(totals, 1.0)
         return 1.0 - np.sum(probs * probs, axis=1)
 
 
     def _resolve_leaf_class(self, class_counts: np.ndarray) -> int:
-        """
-        Wyznacza klasę większościową w liściu z obsługą remisów (tie-breaking):
-        1. Maksymalna liczebność w węźle.
-        2. Wyższy rozkład a priori u danego użytkownika (user_prior_).
-        3. Mniejsza odległość od średniej oceny użytkownika (user_mean_rating_).
-        4. Preferencja globalnie najczęstszej klasy środkowej (3).
-        """
+
         max_cnt = np.max(class_counts)
         candidates = np.flatnonzero(class_counts == max_cnt)
         if len(candidates) == 1:
             return int(candidates[0])
 
-        # Tie-breaker 1: user prior
         priors = self.user_prior_[candidates]
         max_prior = np.max(priors)
         candidates = candidates[np.isclose(priors, max_prior)]
         if len(candidates) == 1:
             return int(candidates[0])
 
-        # Tie-breaker 2: najbliżej średniej oceny użytkownika
         dists = np.abs(candidates - self.user_mean_rating_)
         min_dist = np.min(dists)
         candidates = candidates[np.isclose(dists, min_dist)]
         if len(candidates) == 1:
             return int(candidates[0])
 
-        # Tie-breaker 3: najbliżej 3.0
         dists_global = np.abs(candidates - 3.0)
         return int(candidates[np.argmin(dists_global)])
 
     def _select_candidate_features(self, n_total_features: int) -> np.ndarray:
-        """Wybiera indeksy cech rozpatrywanych przy podziale danego węzła."""
         if (
             self.max_features is None
             or self.max_features == "all"
@@ -175,10 +145,7 @@ class DecisionTreeClassifierCustom:
         parent_impurity: float,
         parent_counts: np.ndarray,
     ):
-        """
-        Przeszukuje kandydackie cechy i progi podziału za pomocą wektoryzacji NumPy.
-        Zwraca (best_feat, best_thresh, best_gain).
-        """
+
         n_samples, n_features = X.shape
         min_leaf = self.min_samples_leaf
 
@@ -202,7 +169,6 @@ class DecisionTreeClassifierCustom:
                 )
 
                 if is_bin:
-                    # Cecha binarna: jedyny próg podziału to 0.5 (rozdziela 0 od 1)
                     left_mask = col <= 0.5
                     n_left = int(np.sum(left_mask))
                     n_right = n_samples - n_left
@@ -220,16 +186,13 @@ class DecisionTreeClassifierCustom:
                         best_feat = int(j)
                         best_thresh = 0.5
                 else:
-                    # Cecha ciągła / dyskretna: sortowanie i skumulowane sumy (np.cumsum)
                     order = np.argsort(col, kind="mergesort")
                     sorted_col = col[order]
                     if sorted_col[0] == sorted_col[-1]:
                         continue  # Cecha stała w węźle
 
                     sorted_onehot = y_onehot[order]
-                    # Miejsca, w których wartość cechy faktycznie wzrasta
                     valid_split_pos = np.flatnonzero(sorted_col[:-1] < sorted_col[1:])
-                    # Uwzględnienie ograniczenia min_samples_leaf
                     valid_split_pos = valid_split_pos[
                         (valid_split_pos + 1 >= min_leaf)
                         & (n_samples - (valid_split_pos + 1) >= min_leaf)
@@ -237,7 +200,6 @@ class DecisionTreeClassifierCustom:
                     if len(valid_split_pos) == 0:
                         continue
 
-                    # Opcjonalne zawężenie do max_thresholds kwantyli
                     if (
                         self.max_thresholds is not None
                         and len(valid_split_pos) > self.max_thresholds
@@ -277,8 +239,6 @@ class DecisionTreeClassifierCustom:
 
         evaluate_feature_subset(candidate_features)
 
-        # Edge-case: jeśli w Random Forest na wylosowanym podzbiorze cech nie znaleziono
-        # żadnego dopuszczalnego podziału, próbujemy pozostałych cech
         if best_feat is None and len(candidate_features) < n_features:
             remaining = np.setdiff1d(np.arange(n_features), candidate_features)
             evaluate_feature_subset(remaining)
@@ -294,7 +254,6 @@ class DecisionTreeClassifierCustom:
         impurity = self._compute_node_impurity(class_counts)
         predicted_class = self._resolve_leaf_class(class_counts)
 
-        # Sprawdzenie warunków stopu
         if (
             impurity <= 1e-12
             or (self.max_depth is not None and depth >= self.max_depth)
@@ -387,7 +346,6 @@ class DecisionTreeClassifierCustom:
         feature_names: Optional[List[str]] = None,
         is_binary_feature: Optional[np.ndarray] = None,
     ) -> "DecisionTreeClassifierCustom":
-        """Trenuje drzewo decyzyjne na macierzy cech X i wektorze ocen y."""
         X_arr = np.asarray(X, dtype=np.float64)
         y_arr = np.asarray(y, dtype=np.int64)
 
@@ -396,7 +354,6 @@ class DecisionTreeClassifierCustom:
         self.rng_ = np.random.default_rng(self.random_state)
 
         if X_arr.shape[0] == 0:
-            # Zabezpieczenie dla pustego zbioru treningowego (zimny start)
             self.user_prior_ = np.ones(self.n_classes, dtype=np.float64) / self.n_classes
             self.user_mean_rating_ = 3.0
             self.root_ = TreeNode(
@@ -410,7 +367,6 @@ class DecisionTreeClassifierCustom:
             )
             return self
 
-        # Kodowanie one-hot wektora docelowego y w przestrzeni klas 0..5
         y_onehot = np.zeros((X_arr.shape[0], self.n_classes), dtype=np.int64)
         valid_y = np.clip(y_arr, 0, self.n_classes - 1)
         y_onehot[np.arange(X_arr.shape[0]), valid_y] = 1
@@ -431,7 +387,6 @@ class DecisionTreeClassifierCustom:
         return node
 
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
-        """Zwraca macierz prawdopodobieństw klas o wymiarach (N, 6)."""
         if self.root_ is None:
             raise RuntimeError("Drzewo nie zostało wytrenowane. Wywołaj najpierw fit().")
         X_arr = np.asarray(X, dtype=np.float64)
@@ -442,7 +397,6 @@ class DecisionTreeClassifierCustom:
         return probs
 
     def predict(self, X: np.ndarray) -> np.ndarray:
-        """Zwraca wektor przewidywanych klas całkowitych {0, 1, 2, 3, 4, 5}."""
         if self.root_ is None:
             raise RuntimeError("Drzewo nie zostało wytrenowane. Wywołaj najpierw fit().")
         X_arr = np.asarray(X, dtype=np.float64)
@@ -453,7 +407,6 @@ class DecisionTreeClassifierCustom:
         return preds
 
     def count_nodes_and_leaves(self) -> Tuple[int, int, int]:
-        """Zwraca (liczba_wszystkich_węzłów, liczba_liści, maksymalna_głębokość)."""
         if self.root_ is None:
             return 0, 0, 0
         total_nodes = 0

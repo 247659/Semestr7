@@ -1,18 +1,3 @@
-"""
-Moduł walidacji krzyżowej per-user (Adaptive Stratified K-Fold), obliczania metryk
-oraz indywidualnego doboru hiperparametrów (Per-User Hyperparameter Tuning):
-- Accuracy
-- Macro F1-score
-- Weighted F1-score
-- Mean Absolute Error (MAE)
-- Confusion Matrix (6 x 6)
-
-Zapewnia całkowity brak przecieku danych (zero data leakage): każdy model
-wewnątrz foldu trenuje wyłącznie na części treningowej danego użytkownika,
-a wybór najlepszej konfiguracji hiperparametrów odbywa się niezależnie
-dla każdego z 358 użytkowników na podstawie jego wyników walidacyjnych.
-"""
-
 import numpy as np
 import pandas as pd
 from collections import Counter
@@ -24,11 +9,7 @@ from random_forest import RandomForestClassifierCustom
 def adaptive_stratified_kfold_indices(
     y: np.ndarray, n_splits: int = 3, random_state: int = 42
 ) -> List[Tuple[np.ndarray, np.ndarray]]:
-    """
-    Tworzy podział na n_splits foldów z zachowaniem proporcji klas (stratification).
-    Bezpiecznie obsługuje klasy rzadkie o liczebności mniejszej niż n_splits (np. 1 lub 2 przykłady)
-    poprzez cykliczne (round-robin) przypisywanie przetasowanych indeksów każdej klasy do kolejnych foldów.
-    """
+
     rng = np.random.default_rng(random_state)
     n_samples = len(y)
     folds: List[List[int]] = [[] for _ in range(n_splits)]
@@ -57,12 +38,7 @@ def adaptive_stratified_kfold_indices(
 def compute_classification_metrics(
     y_true: np.ndarray, y_pred: np.ndarray, n_classes: int = 6
 ) -> Dict[str, float]:
-    """
-    Oblicza wyłącznie metryki potrzebne do wyboru najlepszego modelu dla pojedynczego użytkownika:
-    - accuracy
-    - weighted_f1
-    - mae
-    """
+
     y_t = np.asarray(y_true, dtype=np.int64)
     y_p = np.asarray(y_pred, dtype=np.int64)
     n = len(y_t)
@@ -105,10 +81,7 @@ def evaluate_per_user_cv(
     n_splits: int = 3,
     random_state: int = 42,
 ) -> Dict[int, Dict[str, float]]:
-    """
-    Przeprowadza walidację krzyżową (n_splits-Fold CV) oddzielnie dla każdego użytkownika
-    i zwraca słownik wyników: {user_id: {"accuracy": ..., "weighted_f1": ..., "mae": ...}}.
-    """
+
     if model_params is None:
         model_params = {}
 
@@ -158,10 +131,7 @@ def tune_hyperparameters_per_user(
     n_splits: int = 3,
     random_state: int = 42,
 ) -> Dict[str, Any]:
-    """
-    Przeprowadza indywidualny dobór hiperparametrów oddzielnie dla każdego użytkownika.
-    Zwraca tylko minimalny zestaw zmiennych wymagany w main.py.
-    """
+
     config_results: Dict[str, Dict[int, Dict[str, float]]] = {}
     for cfg_name, cfg_params in configs_grid.items():
         config_results[cfg_name] = evaluate_per_user_cv(

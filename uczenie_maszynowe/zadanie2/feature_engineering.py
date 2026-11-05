@@ -1,19 +1,3 @@
-"""
-Moduł inżynierii cech (Feature Engineering) przekształcający surowe metadane
-filmów z TMDB (tmdb_raw.json) oraz movie.csv w macierz cech numerycznych i binarnych.
-
-Zgodnie z zatwierdzonym projektem (Etap 1):
-- Grupa A: Podstawowe cechy numeryczne (budget, revenue, runtime, popularity,
-  vote_average, vote_count, release_year, movie_age, roi_ratio, is_budget_known, is_revenue_known).
-- Grupa B: Gatunki filmowe (multi-hot encoding wszystkich gatunków + genres_count).
-- Grupa C: Informacje o produkcji (is_english, najczęstsze języki i kraje z progiem >= 5,
-  liczba firm/krajów/języków, najczęstsze wytwórnie z progiem >= 5).
-- Grupa D: Obsada i ekipa (cast_count, crew_count, top5_cast_max_popularity,
-  top5_cast_mean_popularity, director_popularity, female_cast_ratio + multi-hot dla
-  najczęstszych reżyserów >= 3, aktorów >= 4, scenarzystów >= 3).
-- Grupa E: Statystyki opisu (overview_len_words, has_tagline) bez pełnego TF-IDF.
-"""
-
 import numpy as np
 import pandas as pd
 from collections import Counter
@@ -51,7 +35,6 @@ class MovieFeatureEngineer:
 
     @staticmethod
     def _extract_movie_attributes(rec: Dict[str, Any]) -> Dict[str, Any]:
-        """Pomocnicza ekstrakcja pól z pojedynczego słownika JSON filmu."""
         if not rec:
             rec = {}
 
@@ -183,19 +166,13 @@ class MovieFeatureEngineer:
         }
 
     def _compute_tfidf_svd(self, texts: List[str], n_components: int = 5) -> np.ndarray:
-        """
-        Oblicza reprezentację TF-IDF (z wbudowanymi angielskimi stop-words w scikit-learn)
-        i redukuje jej wymiarowość za pomocą TruncatedSVD (LSA).
-        """
         n_docs = len(texts)
         if n_docs == 0 or n_components <= 0:
             return np.zeros((n_docs, 0), dtype=np.float64)
 
-        # Sprawdzenie czy w korpusie są jakiekolwiek słowa (ochrona dla testów jednostkowych z pustym opisem)
         if not any(t.strip() for t in texts):
             return np.zeros((n_docs, n_components), dtype=np.float64)
 
-        # Dla normalnego zbioru (200 filmów) odrzucamy słowa z < 2 dokumentów; dla małych testów min_df=1
         min_df_val = 2 if n_docs >= 10 else 1
 
         vectorizer = TfidfVectorizer(
@@ -209,7 +186,6 @@ class MovieFeatureEngineer:
         try:
             tfidf_matrix = vectorizer.fit_transform(texts)
         except ValueError:
-            # Gdy wszystkie słowa zostały odfiltrowane (np. same stop-words)
             return np.zeros((n_docs, n_components), dtype=np.float64)
 
         n_vocab = tfidf_matrix.shape[1]
@@ -220,7 +196,6 @@ class MovieFeatureEngineer:
         svd = TruncatedSVD(n_components=actual_k, random_state=42)
         reduced = svd.fit_transform(tfidf_matrix)
 
-        # Jeśli słownik lub liczba wierszy były mniejsze niż n_components, dopełniamy zerami
         if actual_k < n_components:
             pad = np.zeros((n_docs, n_components - actual_k), dtype=np.float64)
             reduced = np.hstack([reduced, pad])
@@ -230,14 +205,7 @@ class MovieFeatureEngineer:
     def fit_transform(
             self, movies_df: pd.DataFrame, tmdb_records: Dict[int, Dict[str, Any]]
     ) -> Tuple[np.ndarray, Dict[int, int], List[str], np.ndarray]:
-        """
-        Buduje macierz cech X_movies o wymiarach (M, P), gdzie M = liczba filmów (200).
-        Zwraca:
-        - X_movies: np.ndarray (M, P)
-        - movie_id_to_row: dict {movie_id -> indeks wiersza 0..M-1}
-        - feature_names: lista nazw cech o długości P
-        - is_binary_feature: maska bool o długości P wskazująca cechy binarne (0/1)
-        """
+
         movie_ids = sorted(movies_df["id"].astype(int).unique())
         movie_id_to_row = {m_id: idx for idx, m_id in enumerate(movie_ids)}
 
@@ -246,7 +214,6 @@ class MovieFeatureEngineer:
             for m_id in movie_ids
         ]
 
-        # Wyznaczenie median dla cech ciągłych (imputacja zer/braków bez data leakage)
         valid_budgets = [p["budget"] for p in parsed_list if p["budget"] > 0]
         valid_revenues = [p["revenue"] for p in parsed_list if p["revenue"] > 0]
         valid_runtimes = [p["runtime"] for p in parsed_list if p["runtime"] > 0]
@@ -265,7 +232,6 @@ class MovieFeatureEngineer:
             "release_year": float(np.median(valid_years)) if valid_years else 1990.0,
         }
 
-        # Zliczanie częstości kategorii w zbiorze 200 filmów
         genre_counter = Counter()
         collection_counter = Counter()
         lang_counter = Counter()
@@ -310,11 +276,9 @@ class MovieFeatureEngineer:
             [k for k, v in writer_counter.items() if v >= self.min_writer_freq]
         )
 
-        # Definicja nazw cech oraz flag binarności
         feature_names: List[str] = []
         is_binary: List[bool] = []
 
-        # Grupa A: Podstawowe numeryczne + flagi
         num_a_features = [
             ("budget_log", False),
             ("revenue_log", False),
@@ -323,14 +287,12 @@ class MovieFeatureEngineer:
             ("vote_average", False),
             ("release_year", False),
         ]
-        # Grupa C: Liczniki produkcyjne + is_english
         num_c_features = [
             ("is_english", True),
             ("prod_companies_count", False),
             ("prod_countries_count", False),
             ("spoken_languages_count", False),
         ]
-        # Grupa D: Agregaty obsady i ekipy
         num_d_features = [
             ("cast_count", False),
             ("crew_count", False),
@@ -350,12 +312,10 @@ class MovieFeatureEngineer:
             feature_names.append(name)
             is_binary.append(b_flag)
 
-        # Multi-hot: Gatunki
         for g in selected_genres:
             feature_names.append(f"genre_{g.replace(' ', '_')}")
             is_binary.append(True)
 
-        # Multi-hot: Kolekcje filmowe
         for collection in selected_collections:
             clean_collection = "".join(
                 ch if ch.isalnum() else "_"
@@ -365,35 +325,29 @@ class MovieFeatureEngineer:
             feature_names.append(f"collection_{clean_collection}")
             is_binary.append(True)
 
-        # Multi-hot: Języki
         for lg in selected_langs:
             feature_names.append(f"lang_{lg}")
             is_binary.append(True)
 
-        # Multi-hot: Kraje
         for ct in selected_countries:
             feature_names.append(f"country_{ct.replace(' ', '_')}")
             is_binary.append(True)
 
-        # Multi-hot: Wytwórnie
         for cp in selected_companies:
             clean_cp = "".join(ch if ch.isalnum() else "_" for ch in cp).strip("_")
             feature_names.append(f"company_{clean_cp[:25]}")
             is_binary.append(True)
 
-        # Multi-hot: Reżyserzy
         for dr in selected_directors:
             clean_dr = "".join(ch if ch.isalnum() else "_" for ch in dr).strip("_")
             feature_names.append(f"director_{clean_dr}")
             is_binary.append(True)
 
-        # Multi-hot: Aktorzy
         for ac in selected_actors:
             clean_ac = "".join(ch if ch.isalnum() else "_" for ch in ac).strip("_")
             feature_names.append(f"actor_{clean_ac}")
             is_binary.append(True)
 
-        # Multi-hot: Scenarzyści
         for wr in selected_writers:
             clean_wr = "".join(ch if ch.isalnum() else "_" for ch in wr).strip("_")
             feature_names.append(f"writer_{clean_wr}")
@@ -402,7 +356,6 @@ class MovieFeatureEngineer:
         self.feature_names_ = feature_names
         self.is_binary_feature_ = np.array(is_binary, dtype=bool)
 
-        # Budowa macierzy X_movies
         M = len(movie_ids)
         P = len(feature_names)
         X_movies = np.zeros((M, P), dtype=np.float64)

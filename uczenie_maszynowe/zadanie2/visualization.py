@@ -1,15 +1,3 @@
-"""
-Moduł odpowiedzialny za wizualizację wytrenowanego drzewa decyzyjnego (tree.png)
-przy użyciu biblioteki Matplotlib.
-
-Automatycznie oblicza rozstawienie współrzędnych (x, y) na podstawie liczby liści
-w poddrzewach, dzięki czemu żadne węzły nie nachodzą na siebie, a grafika jest
-w pełni czytelna i prezentuje:
-- warunek podziału (w węzłach wewnętrznych),
-- przewidywaną ocenę (w liściach, wyróżnioną kolorystycznie),
-- wartość nieczystości (gini/entropy), liczbę próbek (samples) oraz rozkład klas (counts).
-"""
-
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -17,7 +5,6 @@ from typing import Dict, Tuple
 from decision_tree import DecisionTreeClassifierCustom, TreeNode
 
 
-# Paleta kolorów dla klas ocen 0..5 (w liściach) oraz węzłów wewnętrznych
 LEAF_COLORS: Dict[int, str] = {
     0: "#f8d7da",  # czerwony
     1: "#ffe5d0",  # pomarańczowy
@@ -62,7 +49,7 @@ def _assign_positions(
     _assign_positions(node.right, split_x, x_max, y - y_step, y_step, positions)
 
 
-def _format_node_label(node: TreeNode, criterion_name: str = "gini") -> str:
+def _format_node_label(node: TreeNode) -> str:
     counts_str = "[" + ",".join(str(int(c)) for c in node.class_counts) + "]"
     if node.is_leaf:
         return (
@@ -86,9 +73,6 @@ def plot_decision_tree(
     output_path: str = "tree.png",
     dpi: int = 250,
 ) -> None:
-    """
-    Rysuje wytrenowane drzewo decyzyjne dla wybranego użytkownika i zapisuje do pliku tree.png.
-    """
     if tree_clf.root_ is None:
         raise RuntimeError("Drzewo nie posiada korzenia (nie zostało wytrenowane).")
 
@@ -187,7 +171,6 @@ def plot_decision_tree(
 
     draw_subtree(tree_clf.root_)
 
-    # Legenda kolorów klas na dole wykresu
     legend_handles = [
         plt.Rectangle(
             (0, 0),
