@@ -18,19 +18,22 @@ import numpy as np
 import pandas as pd
 from collections import Counter
 from typing import Dict, List, Tuple, Any
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.decomposition import TruncatedSVD
 
 
 class MovieFeatureEngineer:
     def __init__(
-        self,
-        reference_year: int = 2026,
-        min_lang_freq: int = 5,
-        min_country_freq: int = 5,
-        min_company_freq: int = 5,
-        min_director_freq: int = 3,
-        min_actor_freq: int = 4,
-        min_writer_freq: int = 3,
-        min_collection_freq: int = 2
+            self,
+            reference_year: int = 2026,
+            min_lang_freq: int = 5,
+            min_country_freq: int = 5,
+            min_company_freq: int = 5,
+            min_director_freq: int = 3,
+            min_actor_freq: int = 4,
+            min_writer_freq: int = 3,
+            min_collection_freq: int = 2,
+            n_text_components: int = 5,
     ):
         self.reference_year = reference_year
         self.min_lang_freq = min_lang_freq
@@ -40,6 +43,7 @@ class MovieFeatureEngineer:
         self.min_actor_freq = min_actor_freq
         self.min_writer_freq = min_writer_freq
         self.min_collection_freq = min_collection_freq
+        self.n_text_components = n_text_components
 
         self.feature_names_: List[str] = []
         self.is_binary_feature_: np.ndarray = np.array([], dtype=bool)
@@ -56,7 +60,6 @@ class MovieFeatureEngineer:
         runtime = float(rec.get("runtime") or 0.0)
         popularity = float(rec.get("popularity") or 0.0)
         vote_average = float(rec.get("vote_average") or 0.0)
-        vote_count = float(rec.get("vote_count") or 0.0)
 
         rel_date = str(rec.get("release_date") or "")
         release_year = np.nan
@@ -120,7 +123,6 @@ class MovieFeatureEngineer:
             key=lambda x: x.get("order", 999),
         )
         top10_cast = cast_sorted[:10]
-        top5_cast = cast_sorted[:5]
 
         top10_actor_names = [
             str(c.get("name")).strip() for c in top10_cast if c.get("name")
@@ -163,7 +165,6 @@ class MovieFeatureEngineer:
             "runtime": runtime,
             "popularity": popularity,
             "vote_average": vote_average,
-            "vote_count": vote_count,
             "release_year": release_year,
             "genres": list(dict.fromkeys(genres)),
             "collection_name": collection_name,
@@ -178,10 +179,56 @@ class MovieFeatureEngineer:
             "top10_actors": list(dict.fromkeys(top10_actor_names)),
             "directors": list(dict.fromkeys(directors)),
             "writers": list(dict.fromkeys(writers)),
+            "full_text": f"{tagline} {overview}".strip(),
         }
 
+    def _compute_tfidf_svd(self, texts: List[str], n_components: int = 5) -> np.ndarray:
+        """
+        Oblicza reprezentację TF-IDF (z wbudowanymi angielskimi stop-words w scikit-learn)
+        i redukuje jej wymiarowość za pomocą TruncatedSVD (LSA).
+        """
+        n_docs = len(texts)
+        if n_docs == 0 or n_components <= 0:
+            return np.zeros((n_docs, 0), dtype=np.float64)
+
+        # Sprawdzenie czy w korpusie są jakiekolwiek słowa (ochrona dla testów jednostkowych z pustym opisem)
+        if not any(t.strip() for t in texts):
+            return np.zeros((n_docs, n_components), dtype=np.float64)
+
+        # Dla normalnego zbioru (200 filmów) odrzucamy słowa z < 2 dokumentów; dla małych testów min_df=1
+        min_df_val = 2 if n_docs >= 10 else 1
+
+        vectorizer = TfidfVectorizer(
+            stop_words="english",
+            max_features=500,
+            min_df=min_df_val,
+            max_df=0.85,
+            sublinear_tf=True,
+        )
+
+        try:
+            tfidf_matrix = vectorizer.fit_transform(texts)
+        except ValueError:
+            # Gdy wszystkie słowa zostały odfiltrowane (np. same stop-words)
+            return np.zeros((n_docs, n_components), dtype=np.float64)
+
+        n_vocab = tfidf_matrix.shape[1]
+        actual_k = min(n_components, n_docs - 1, n_vocab - 1)
+        if actual_k <= 0:
+            return np.zeros((n_docs, n_components), dtype=np.float64)
+
+        svd = TruncatedSVD(n_components=actual_k, random_state=42)
+        reduced = svd.fit_transform(tfidf_matrix)
+
+        # Jeśli słownik lub liczba wierszy były mniejsze niż n_components, dopełniamy zerami
+        if actual_k < n_components:
+            pad = np.zeros((n_docs, n_components - actual_k), dtype=np.float64)
+            reduced = np.hstack([reduced, pad])
+
+        return reduced.astype(np.float64)
+
     def fit_transform(
-        self, movies_df: pd.DataFrame, tmdb_records: Dict[int, Dict[str, Any]]
+            self, movies_df: pd.DataFrame, tmdb_records: Dict[int, Dict[str, Any]]
     ) -> Tuple[np.ndarray, Dict[int, int], List[str], np.ndarray]:
         """
         Buduje macierz cech X_movies o wymiarach (M, P), gdzie M = liczba filmów (200).
@@ -205,7 +252,6 @@ class MovieFeatureEngineer:
         valid_runtimes = [p["runtime"] for p in parsed_list if p["runtime"] > 0]
         valid_pops = [p["popularity"] for p in parsed_list if p["popularity"] > 0]
         valid_vavg = [p["vote_average"] for p in parsed_list if p["vote_average"] > 0]
-        valid_vcnt = [p["vote_count"] for p in parsed_list if p["vote_count"] > 0]
         valid_years = [
             p["release_year"] for p in parsed_list if not np.isnan(p["release_year"])
         ]
@@ -216,7 +262,6 @@ class MovieFeatureEngineer:
             "runtime": float(np.median(valid_runtimes)) if valid_runtimes else 120.0,
             "popularity": float(np.median(valid_pops)) if valid_pops else 30.0,
             "vote_average": float(np.median(valid_vavg)) if valid_vavg else 7.9,
-            "vote_count": float(np.median(valid_vcnt)) if valid_vcnt else 5000.0,
             "release_year": float(np.median(valid_years)) if valid_years else 1990.0,
         }
 
@@ -233,7 +278,9 @@ class MovieFeatureEngineer:
         for p in parsed_list:
             genre_counter.update(p["genres"])
             collection_counter.update(p["collection_name"])
-            lang_counter[p["orig_lang"]] += 1   # TODO DLACZEGO TU JEST +=1
+            if p["collection_name"]:
+                collection_counter[p["collection_name"]] += 1
+            lang_counter[p["orig_lang"]] += 1
             country_counter.update(p["countries"])
             company_counter.update(p["companies"])
             director_counter.update(p["directors"])
@@ -274,7 +321,6 @@ class MovieFeatureEngineer:
             ("runtime", False),
             ("popularity", False),
             ("vote_average", False),
-            ("vote_count_log", False),
             ("release_year", False),
         ]
         # Grupa C: Liczniki produkcyjne + is_english
@@ -292,10 +338,13 @@ class MovieFeatureEngineer:
             ("belongs_to_collection", True),
         ]
 
+        num_e_features = [(f"text_svd_{k}", False) for k in range(self.n_text_components)]
+
         base_spec = (
-            num_a_features
-            + num_c_features
-            + num_d_features
+                num_a_features
+                + num_c_features
+                + num_d_features
+                + num_e_features
         )
         for name, b_flag in base_spec:
             feature_names.append(name)
@@ -358,6 +407,11 @@ class MovieFeatureEngineer:
         P = len(feature_names)
         X_movies = np.zeros((M, P), dtype=np.float64)
 
+        text_svd_matrix = self._compute_tfidf_svd(
+            [p["full_text"] for p in parsed_list],
+            n_components=self.n_text_components,
+        )
+
         for i, p in enumerate(parsed_list):
 
             b_val = p["budget"] if p["budget"] > 0 else self.medians_["budget"]
@@ -371,9 +425,6 @@ class MovieFeatureEngineer:
                 if p["vote_average"] > 0
                 else self.medians_["vote_average"]
             )
-            vc_val = (
-                p["vote_count"] if p["vote_count"] > 0 else self.medians_["vote_count"]
-            )
             yr_val = (
                 p["release_year"]
                 if not np.isnan(p["release_year"])
@@ -382,7 +433,6 @@ class MovieFeatureEngineer:
 
             budget_log = float(np.log1p(b_val))
             revenue_log = float(np.log1p(r_val))
-            vote_count_log = float(np.log1p(vc_val))
 
             row_vals: List[float] = [
                 budget_log,
@@ -390,7 +440,6 @@ class MovieFeatureEngineer:
                 rt_val,
                 pop_val,
                 va_val,
-                vote_count_log,
                 yr_val,
                 1.0 if p["orig_lang"] == "en" else 0.0,
                 float(len(p["companies"])),
@@ -400,6 +449,7 @@ class MovieFeatureEngineer:
                 p["crew_count"],
                 p["female_cast_ratio"],
                 p["belongs_to_collection"],
+                *text_svd_matrix[i].tolist(),
             ]
 
             g_set = set(p["genres"])

@@ -19,12 +19,12 @@ from decision_tree import DecisionTreeClassifierCustom, TreeNode
 
 # Paleta kolorów dla klas ocen 0..5 (w liściach) oraz węzłów wewnętrznych
 LEAF_COLORS: Dict[int, str] = {
-    0: "#f8d7da",  # jasnoczerwony (ocena 0)
-    1: "#ffe5d0",  # jasnopomarańczowy (ocena 1)
-    2: "#fff3cd",  # jasnożółty (ocena 2)
-    3: "#e2f0d9",  # jasnozielony (ocena 3)
-    4: "#d1ecf1",  # jasnobłękitny (ocena 4)
-    5: "#cce5ff",  # jasnoniebieski (ocena 5)
+    0: "#f8d7da",  # czerwony
+    1: "#ffe5d0",  # pomarańczowy
+    2: "#fff3cd",  # żółty
+    3: "#e2f0d9",  # zielony
+    4: "#d1ecf1",  # błękitny
+    5: "#cce5ff",  # niebieski
 }
 INTERNAL_NODE_COLOR = "#f0f4f8"
 
@@ -67,7 +67,6 @@ def _format_node_label(node: TreeNode, criterion_name: str = "gini") -> str:
     if node.is_leaf:
         return (
             f"Predict: Rating {node.predicted_class}\n"
-            f"{criterion_name} = {node.impurity:.3f} | n = {node.n_samples}\n"
             f"counts = {counts_str}"
         )
     else:
@@ -77,9 +76,7 @@ def _format_node_label(node: TreeNode, criterion_name: str = "gini") -> str:
             cond_str = f"{node.feature_name} <= {node.threshold:.2f}"
         return (
             f"{cond_str}\n"
-            f"{criterion_name} = {node.impurity:.3f} | n = {node.n_samples}\n"
             f"counts = {counts_str}\n"
-            f"majority = {node.predicted_class}"
         )
 
 
@@ -142,7 +139,7 @@ def plot_decision_tree(
                 )
                 mid_x = 0.5 * (x_p + x_c)
                 mid_y = 0.5 * (y_p + y_c)
-                edge_lbl = "True (<=)" if is_left else "False (>)"
+                edge_lbl = "True" if is_left else "False"
                 edge_col = "#1b7837" if is_left else "#b2182b"
                 ax.text(
                     mid_x,

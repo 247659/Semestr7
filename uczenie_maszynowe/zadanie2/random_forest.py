@@ -122,7 +122,7 @@ class RandomForestClassifierCustom:
             crit = self.criterion
             leaf_min = self.min_samples_leaf
             if self.diversify_trees:
-                crit = "gini" if (b % 2 == 0) else "entropy"
+                crit = "gini"
                 leaf_min = int(self.rng_.choice([1, 2, 3]))
 
             tree = DecisionTreeClassifierCustom(

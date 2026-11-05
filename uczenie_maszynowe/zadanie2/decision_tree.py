@@ -73,8 +73,6 @@ class DecisionTreeClassifierCustom:
         n_classes: int = 6,
         random_state: Optional[int] = 42,
     ):
-        if criterion not in ("gini", "entropy"):
-            raise ValueError("Parametr criterion musi mieć wartość 'gini' lub 'entropy'.")
         self.criterion = criterion
         self.max_depth = max_depth
         self.min_samples_split = max(2, int(min_samples_split))
@@ -101,20 +99,8 @@ class DecisionTreeClassifierCustom:
         probs = class_counts / total
         return float(1.0 - np.sum(probs * probs))
 
-    @staticmethod
-    def compute_entropy(class_counts: np.ndarray) -> float:
-        """Oblicza entropię Shannona: Entropy(S) = -sum(p_k * log2(p_k))."""
-        total = float(np.sum(class_counts))
-        if total <= 0.0:
-            return 0.0
-        probs = class_counts / total
-        nonzero = probs[probs > 0.0]
-        return float(-np.sum(nonzero * np.log2(nonzero)))
-
     def _compute_node_impurity(self, class_counts: np.ndarray) -> float:
-        if self.criterion == "gini":
-            return self.compute_gini(class_counts)
-        return self.compute_entropy(class_counts)
+        return self.compute_gini(class_counts)
 
     def _compute_vectorized_impurity(
         self, counts_matrix: np.ndarray, totals: np.ndarray
@@ -125,12 +111,8 @@ class DecisionTreeClassifierCustom:
         totals: kształt (T, 1)
         """
         probs = counts_matrix / np.maximum(totals, 1.0)
-        if self.criterion == "gini":
-            return 1.0 - np.sum(probs * probs, axis=1)
-        else:
-            with np.errstate(divide="ignore", invalid="ignore"):
-                log_p = np.where(probs > 0.0, np.log2(np.maximum(probs, 1e-15)), 0.0)
-            return -np.sum(probs * log_p, axis=1)
+        return 1.0 - np.sum(probs * probs, axis=1)
+
 
     def _resolve_leaf_class(self, class_counts: np.ndarray) -> int:
         """

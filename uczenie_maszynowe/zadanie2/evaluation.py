@@ -56,28 +56,18 @@ def adaptive_stratified_kfold_indices(
 
 def compute_classification_metrics(
     y_true: np.ndarray, y_pred: np.ndarray, n_classes: int = 6
-) -> Dict[str, Any]:
+) -> Dict[str, float]:
     """
-    Oblicza kompletny zestaw metryk klasyfikacyjnych na parach (y_true, y_pred):
+    Oblicza wyłącznie metryki potrzebne do wyboru najlepszego modelu dla pojedynczego użytkownika:
     - accuracy
-    - macro_f1
     - weighted_f1
-    - mae (średni błąd bezwzględny na skali 0..5)
-    - confusion_matrix (kształt 6x6, wiersze: true, kolumny: pred)
-    - per_class_f1 (wektor długości 6)
+    - mae
     """
     y_t = np.asarray(y_true, dtype=np.int64)
     y_p = np.asarray(y_pred, dtype=np.int64)
     n = len(y_t)
     if n == 0:
-        return {
-            "accuracy": 0.0,
-            "macro_f1": 0.0,
-            "weighted_f1": 0.0,
-            "mae": 0.0,
-            "confusion_matrix": np.zeros((n_classes, n_classes), dtype=np.int64),
-            "per_class_f1": np.zeros(n_classes, dtype=np.float64),
-        }
+        return {"accuracy": 0.0, "weighted_f1": 0.0, "mae": 0.0}
 
     accuracy = float(np.mean(y_t == y_p))
     mae = float(np.mean(np.abs(y_t - y_p)))
@@ -94,22 +84,13 @@ def compute_classification_metrics(
         denom = supports[c] + pred_totals[c]
         if denom > 0.0:
             per_class_f1[c] = (2.0 * tp) / denom
-        else:
-            per_class_f1[c] = 0.0
 
-    present_mask = supports > 0
-    macro_f1 = (
-        float(np.mean(per_class_f1[present_mask])) if np.any(present_mask) else 0.0
-    )
     weighted_f1 = float(np.sum(per_class_f1 * supports) / float(n))
 
     return {
         "accuracy": accuracy,
-        "macro_f1": macro_f1,
         "weighted_f1": weighted_f1,
         "mae": mae,
-        "confusion_matrix": cm,
-        "per_class_f1": per_class_f1,
     }
 
 
@@ -123,20 +104,15 @@ def evaluate_per_user_cv(
     model_params: Dict[str, Any] = None,
     n_splits: int = 3,
     random_state: int = 42,
-) -> Dict[str, Any]:
+) -> Dict[int, Dict[str, float]]:
     """
-    Przeprowadza walidację krzyżową (n_splits-Fold CV) dla pojedynczej zadanej
-    konfiguracji hiperparametrów oddzielnie dla każdego użytkownika.
-    Zwraca zarówno metryki zagregowane globalnie, jak i szczegółowe wyniki każdego użytkownika.
+    Przeprowadza walidację krzyżową (n_splits-Fold CV) oddzielnie dla każdego użytkownika
+    i zwraca słownik wyników: {user_id: {"accuracy": ..., "weighted_f1": ..., "mae": ...}}.
     """
     if model_params is None:
         model_params = {}
 
-    oof_y_true_list: List[np.ndarray] = []
-    oof_y_pred_list: List[np.ndarray] = []
-    user_acc_list: List[float] = []
-    user_wf1_list: List[float] = []
-    per_user_details: Dict[int, Dict[str, Any]] = {}
+    per_user_details: Dict[int, Dict[str, float]] = {}
 
     grouped = train_df.groupby("user_id", sort=True)
     for user_id, group in grouped:
@@ -166,39 +142,9 @@ def evaluate_per_user_cv(
             clf.fit(X_tr, y_tr, feature_names, is_binary_feature)
             u_oof_preds[val_idx] = clf.predict(X_val)
 
-        oof_y_true_list.append(y_user)
-        oof_y_pred_list.append(u_oof_preds)
+        per_user_details[u_id] = compute_classification_metrics(y_user, u_oof_preds)
 
-        u_metrics = compute_classification_metrics(y_user, u_oof_preds)
-        user_acc_list.append(u_metrics["accuracy"])
-        user_wf1_list.append(u_metrics["weighted_f1"])
-
-        per_user_details[u_id] = {
-            "y_true": y_user,
-            "y_pred": u_oof_preds,
-            "accuracy": u_metrics["accuracy"],
-            "weighted_f1": u_metrics["weighted_f1"],
-            "macro_f1": u_metrics["macro_f1"],
-            "mae": u_metrics["mae"],
-        }
-
-    all_true = np.concatenate(oof_y_true_list)
-    all_pred = np.concatenate(oof_y_pred_list)
-    global_metrics = compute_classification_metrics(all_true, all_pred)
-
-    return {
-        "global_accuracy": global_metrics["accuracy"],
-        "global_macro_f1": global_metrics["macro_f1"],
-        "global_weighted_f1": global_metrics["weighted_f1"],
-        "global_mae": global_metrics["mae"],
-        "confusion_matrix": global_metrics["confusion_matrix"],
-        "per_class_f1": global_metrics["per_class_f1"],
-        "mean_user_accuracy": float(np.mean(user_acc_list)),
-        "std_user_accuracy": float(np.std(user_acc_list)),
-        "mean_user_weighted_f1": float(np.mean(user_wf1_list)),
-        "std_user_weighted_f1": float(np.std(user_wf1_list)),
-        "per_user_details": per_user_details,
-    }
+    return per_user_details
 
 
 def tune_hyperparameters_per_user(
@@ -213,26 +159,12 @@ def tune_hyperparameters_per_user(
     random_state: int = 42,
 ) -> Dict[str, Any]:
     """
-    Przeprowadza indywidualny dobór hiperparametrów (Per-User Hyperparameter Tuning)
-    oddzielnie dla każdego użytkownika spośród szerokiej siatki konfiguracji `configs_grid`.
-
-    Dla każdego użytkownika wybierana jest ta konfiguracja, która osiąga dla niego:
-    1. Najwyższy wynik Weighted F1-score w 3-Fold CV,
-    2. W razie remisu: najwyższe Accuracy,
-    3. W razie dalszego remisu: najniższy błąd bezwzględny (MAE).
-
-    Zwraca:
-    - per_config_summaries: wyniki każdej pojedynczej konfiguracji w skali całej populacji,
-    - best_global_config_name: nazwa konfiguracji najlepszej globalnie (dla porównania),
-    - best_config_name_per_user: słownik {user_id -> nazwa_najlepszej_konfiguracji_użytkownika},
-    - best_params_per_user: słownik {user_id -> słownik_najlepszych_hiperparametrów_użytkownika},
-    - config_selection_counts: licznik pokazujący, ilu użytkowników wybrało daną konfigurację,
-    - personalized_metrics: zagregowane metryki Out-Of-Fold po zastosowaniu indywidualnie
-      dobranych hiperparametrów dla każdego użytkownika.
+    Przeprowadza indywidualny dobór hiperparametrów oddzielnie dla każdego użytkownika.
+    Zwraca tylko minimalny zestaw zmiennych wymagany w main.py.
     """
-    config_results: Dict[str, Dict[str, Any]] = {}
+    config_results: Dict[str, Dict[int, Dict[str, float]]] = {}
     for cfg_name, cfg_params in configs_grid.items():
-        res = evaluate_per_user_cv(
+        config_results[cfg_name] = evaluate_per_user_cv(
             train_df=train_df,
             X_movies=X_movies,
             movie_id_to_row=movie_id_to_row,
@@ -243,36 +175,17 @@ def tune_hyperparameters_per_user(
             n_splits=n_splits,
             random_state=random_state,
         )
-        config_results[cfg_name] = res
 
-    # Wyznaczenie najlepszej pojedynczej konfiguracji globalnej (punkt odniesienia)
-    best_global_cfg = max(
-        config_results.keys(),
-        key=lambda k: (
-            config_results[k]["global_weighted_f1"],
-            config_results[k]["global_accuracy"],
-            -config_results[k]["global_mae"],
-        ),
-    )
-
-    # Indywidualny wybór najlepszej konfiguracji dla każdego użytkownika osobno
     user_ids = sorted(train_df["user_id"].astype(int).unique())
     best_config_name_per_user: Dict[int, str] = {}
     best_params_per_user: Dict[int, Dict[str, Any]] = {}
 
-    personalized_true_list: List[np.ndarray] = []
-    personalized_pred_list: List[np.ndarray] = []
-    personalized_user_acc: List[float] = []
-    personalized_user_wf1: List[float] = []
-
     for u_id in user_ids:
         best_cfg_u = None
         best_score_tuple = None
-        best_u_detail = None
 
         for cfg_name in configs_grid.keys():
-            u_det = config_results[cfg_name]["per_user_details"][u_id]
-            # Kryterium wyboru per-user: (weighted_f1, accuracy, -mae)
+            u_det = config_results[cfg_name][u_id]
             score_tuple = (
                 round(u_det["weighted_f1"], 6),
                 round(u_det["accuracy"], 6),
@@ -281,39 +194,16 @@ def tune_hyperparameters_per_user(
             if best_score_tuple is None or score_tuple > best_score_tuple:
                 best_score_tuple = score_tuple
                 best_cfg_u = cfg_name
-                best_u_detail = u_det
 
         best_config_name_per_user[u_id] = best_cfg_u
         best_params_per_user[u_id] = configs_grid[best_cfg_u].copy()
 
-        personalized_true_list.append(best_u_detail["y_true"])
-        personalized_pred_list.append(best_u_detail["y_pred"])
-        personalized_user_acc.append(best_u_detail["accuracy"])
-        personalized_user_wf1.append(best_u_detail["weighted_f1"])
-
-    all_pers_true = np.concatenate(personalized_true_list)
-    all_pers_pred = np.concatenate(personalized_pred_list)
-    pers_global_metrics = compute_classification_metrics(all_pers_true, all_pers_pred)
-
     selection_counts = dict(Counter(best_config_name_per_user.values()).most_common())
+    default_config_name = next(iter(selection_counts))
 
     return {
-        "per_config_summaries": config_results,
-        "best_global_config_name": best_global_cfg,
-        "best_global_summary": config_results[best_global_cfg],
         "best_config_name_per_user": best_config_name_per_user,
         "best_params_per_user": best_params_per_user,
+        "default_config_name": default_config_name,
         "config_selection_counts": selection_counts,
-        "personalized_metrics": {
-            "global_accuracy": pers_global_metrics["accuracy"],
-            "global_macro_f1": pers_global_metrics["macro_f1"],
-            "global_weighted_f1": pers_global_metrics["weighted_f1"],
-            "global_mae": pers_global_metrics["mae"],
-            "confusion_matrix": pers_global_metrics["confusion_matrix"],
-            "per_class_f1": pers_global_metrics["per_class_f1"],
-            "mean_user_accuracy": float(np.mean(personalized_user_acc)),
-            "std_user_accuracy": float(np.std(personalized_user_acc)),
-            "mean_user_weighted_f1": float(np.mean(personalized_user_wf1)),
-            "std_user_weighted_f1": float(np.std(personalized_user_wf1)),
-        },
     }
