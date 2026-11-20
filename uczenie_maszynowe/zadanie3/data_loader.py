@@ -1,13 +1,3 @@
-"""
-Moduł odpowiedzialny za wczytywanie danych z plików:
-- movie.csv
-- train.csv
-- task.csv
-oraz budowę macierzy ocen użytkownik-film (R_matrix).
-Zgodnie ze Wskazówką 1 (Hint 1), cechy filmów (np. z tmdb_raw.json) nie są
-brane pod uwagę — wykorzystywane są wyłącznie oceny wystawione przez użytkowników.
-"""
-
 import pandas as pd
 import numpy as np
 from typing import Tuple, Dict, List
@@ -18,10 +8,6 @@ def load_csv_datasets(
     train_path: str = "train.csv",
     task_path: str = "task.csv",
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """
-    Wczytuje pliki movie.csv, train.csv oraz task.csv z separatorem ';'
-    i brakiem wiersza nagłówkowego (z obsługą ewentualnego nagłówka).
-    """
     with open(movie_path, "r", encoding="utf-8") as f:
         first_line = f.readline().strip()
     has_header = first_line.lower().startswith("id;")
@@ -66,13 +52,7 @@ def load_csv_datasets(
 def build_rating_matrix(
     train_df: pd.DataFrame, movies_df: pd.DataFrame
 ) -> Tuple[np.ndarray, List[int], List[int], Dict[int, int], Dict[int, int]]:
-    """
-    Buduje macierz ocen R o wymiarach (U, M), gdzie:
-    - U to liczba unikalnych użytkowników (358),
-    - M to liczba filmów (200),
-    - R[u, m] zawiera ocenę z zakresu {0, 1, 2, 3, 4, 5} lub np.nan, jeśli
-      użytkownik u nie widział (nie ocenił) filmu m w zbiorze treningowym.
-    """
+
     user_ids = sorted(train_df["user_id"].astype(int).unique())
     movie_ids = sorted(movies_df["id"].astype(int).unique())
 

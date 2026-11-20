@@ -1,29 +1,7 @@
-"""
-Moduł obliczania podobieństwa pomiędzy użytkownikami (Person Similarity)
-w oparciu o ich dotychczasowe oceny filmów.
-
-Zgodnie ze Wskazówką 1 i 2 (Hints 1 & 2):
-1. Cechy filmów nie są wykorzystywane — bazujemy wyłącznie na ocenach (0..5).
-2. Podobieństwo dwóch osób jest obliczane WYŁĄCZNIE na podstawie filmów,
-   które obie te osoby widziały (wspólnie ocenione filmy: I_uv = I_u n I_v).
-
-Obsługiwane miary podobieństwa:
-- 'jaccard_adjcos': hybryda Adjusted Cosine na wspólnych filmach pomnożona przez
-  indeks Jaccarda wspólnie obejrzanych filmów |I_u n I_v| / |I_u u I_v|.
-- 'jaccard_pearson': hybryda korelacji Pearsona na wspólnych filmach pomnożona przez
-  indeks Jaccarda wspólnie obejrzanych filmów |I_u n I_v| / |I_u u I_v|.
-- 'jaccard_agreement': ułamek filmów ze zgodnymi ocenami (|r_u - r_v| <= 1) na przekroju
-  wspólnie obejrzanych filmów względem sumy zbiorów obejrzanych filmów |I_u u I_v|.
-"""
-
 import numpy as np
 
 
 def _compute_jaccard_seen_matrix(mask_f: np.ndarray, common: np.ndarray) -> np.ndarray:
-    """
-    Oblicza klasyczną macierz podobieństwa Jaccarda zbiorów obejrzanych filmów:
-    J(u, v) = |I_u n I_v| / |I_u u I_v|.
-    """
     watched_counts = mask_f.sum(axis=1, keepdims=True)
     union = watched_counts + watched_counts.T - common
     jaccard_seen = np.zeros_like(common, dtype=np.float64)
@@ -34,17 +12,11 @@ def _compute_jaccard_seen_matrix(mask_f: np.ndarray, common: np.ndarray) -> np.n
 def compute_user_similarity_matrix(
     R: np.ndarray,
     metric: str = "jaccard_pearson",
-    shrinkage: float = 10.0,
-    min_common: int = 2,
+    min_common: int = 1,
 ) -> np.ndarray:
-    """
-    Wektoryzowane obliczenie macierzy podobieństwa S o wymiarach (U, U).
-    Każdy element S[u, v] jest wyznaczany wyłącznie na podstawie filmów,
-    które ocenili zarówno użytkownik u, jak i użytkownik v (Hint 2).
-    """
-    mask = ~np.isnan(R)  # (U, M) - True tam, gdzie użytkownik widział film
+    mask = ~np.isnan(R)
     mask_f = mask.astype(np.float64)
-    common = mask_f @ mask_f.T  # common[u, v] = liczba wspólnie obejrzanych filmów
+    common = mask_f @ mask_f.T
     R_zero = np.where(mask, R, 0.0)
 
     if metric in ("jaccard_pearson"):
@@ -89,7 +61,6 @@ def compute_user_similarity_matrix(
             sim = sim * jaccard_seen
 
     elif metric == "jaccard_agreement":
-        # Zgodność ocen Jaccarda: |{m in I_uv : |r_u - r_v| <= 1}| / |I_u u I_v|
         watched_counts = mask_f.sum(axis=1, keepdims=True)
         union = watched_counts + watched_counts.T - common
         U = R.shape[0]
@@ -103,11 +74,6 @@ def compute_user_similarity_matrix(
     else:
         raise ValueError(f"Nieznana miara podobieństwa: {metric}")
 
-    # Significance weighting (tylko gdy shrinkage > 0 i nie użyliśmy już wagi Jaccarda)
-    if shrinkage > 0.0 and not metric.startswith("jaccard_"):
-        sim = sim * (common / (common + shrinkage))
-
-    # Warunek minimalnej liczby wspólnie obejrzanych filmów (Hint 2)
     sim = np.where(common >= max(1, int(min_common)), sim, 0.0)
     np.fill_diagonal(sim, 0.0)
     return np.clip(sim, -1.0, 1.0)
